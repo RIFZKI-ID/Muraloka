@@ -1,0 +1,33 @@
+name: muraloka
+description: "Muraloka Apps for Kementrian Badan Pariwisata dan Ekonomi Kreatif
+  Indonesia Upskilling Program Capstone Project"
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  bloc: ^9.0.0
+  cached_network_image: ^3.3.1
+  dartz: ^0.10.1
+  dio: ^5.9.0
+  equatable: ^2.0.7
+  firebase: ^9.0.3
+  firebase_core: ^4.1.0
+  firebase_core_web: ^3.1.0
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  get_it: ^8.2.0
+  skeletonizer: ^2.1.0+1
+  sqflite: ^2.4.2
+  webview_flutter: ^4.13.0
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
