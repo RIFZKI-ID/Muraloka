@@ -10,7 +10,7 @@ import 'package:muraloka/presentation/page/home_page.dart';
 import 'package:muraloka/presentation/page/setting_page.dart';
 
 void main() async {
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform,);
   di.init;
   runApp(const MainApp());
 }
