@@ -153,6 +153,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.6"
+  custom_flutter_painter:
+    dependency: "direct main"
+    description:
+      name: custom_flutter_painter
+      sha256: bdb021bbe265c2e485ebec43b0e85c2b516eeb79cd2337ea03eea7f14f5911b2
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.2"
   dartz:
     dependency: "direct main"
     description:

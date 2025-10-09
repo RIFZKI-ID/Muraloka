@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:muraloka/all_code/page/paint_page.dart';
 import 'package:muraloka/all_code/state/detail_cubit.dart/detail_cubit.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_cubit.dart';
 import 'package:muraloka/constant/name_router.dart';
@@ -16,6 +17,7 @@ import 'package:muraloka/all_code/page/home_page.dart';
 import 'package:muraloka/all_code/page/setting_page.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   di.init;
   FirebaseUIAuth.configureProviders([EmailAuthProvider(), PhoneAuthProvider()]);
@@ -30,7 +32,7 @@ class MainApp extends StatelessWidget {
     final router = GoRouter(
       initialLocation: FirebaseAuth.instance.currentUser == null
           ? '/sign-in'
-          : '/profile',
+          : '/paint',
       routes: <RouteBase>[
         GoRoute(
           path: '/sign-in',
@@ -55,6 +57,7 @@ class MainApp extends StatelessWidget {
           path: '/home',
           builder: (context, state) => HomePage(),
         ),
+        GoRoute(path: '/paint', builder: (context, state) => PaintPage()),
         GoRoute(
           path: '/profile',
           builder: (context, state) => ProfileScreen(
