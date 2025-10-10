@@ -18,6 +18,8 @@ import 'package:muraloka/all_code/page/home_page.dart';
 import 'package:muraloka/all_code/page/setting_page.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   di.init;
   FirebaseUIAuth.configureProviders([EmailAuthProvider(), PhoneAuthProvider()]);
@@ -61,6 +63,17 @@ class MainApp extends StatelessWidget {
         GoRoute(
           path: '/profile',
           builder: (context, state) => ProfileScreen(
+            appBar: AppBar(
+              title: const Text('Profil Pengguna'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  context.go('/home');
+                },
+              ),
+
+              automaticallyImplyLeading: false,
+            ),
             showDeleteConfirmationDialog: true,
             showMFATile: true,
             actions: [SignedOutAction((context) => context.go('/sign-in'))],

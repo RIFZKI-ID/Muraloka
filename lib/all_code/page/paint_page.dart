@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 
+import 'package:go_router/go_router.dart';
+
 class PaintPage extends StatefulWidget {
   const PaintPage({Key? key}) : super(key: key);
 
@@ -100,10 +102,16 @@ class _PaintPageState extends State<PaintPage> {
         // Listen to the controller and update the UI when it updates.
         child: ValueListenableBuilder<PainterControllerValue>(
           valueListenable: controller,
-          child: const Text("Flutter Painter Example"),
+          child: const Text("Canvas"),
           builder: (context, _, child) {
             return AppBar(
               title: child,
+              leading: IconButton(
+                onPressed: () {
+                  context.go('/home');
+                },
+                icon: const Icon(Icons.arrow_back),
+              ),
               actions: [
                 // Delete the selected drawable
                 IconButton(

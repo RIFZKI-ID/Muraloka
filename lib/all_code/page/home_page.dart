@@ -130,7 +130,7 @@ class HomePage extends StatelessWidget {
           DrawerHeader(
             decoration: BoxDecoration(color: theme.primary1),
             child: Text(
-              'Menu Muraloka',
+              'Muraloka',
               style: TextStyle(
                 color: theme.tertiary1,
                 fontSize: 24,
@@ -142,6 +142,15 @@ class HomePage extends StatelessWidget {
             icon: Icons.home,
             text: 'Beranda',
             onTap: () => context.goNamed(HOME_PAGE_ROUTE),
+            textColor: Colors.white,
+          ),
+          _drawerItem(
+            icon: Icons.format_paint,
+            text: 'Canvas',
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/paint');
+            },
             textColor: Colors.white,
           ),
           _drawerItem(
@@ -318,10 +327,7 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 item.subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: bodyTextColor.withOpacity(0.7),
-                ),
+                style: TextStyle(fontSize: 12, color: bodyTextColor),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
