@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:muraloka/all_code/page/paint_page.dart';
 import 'package:muraloka/all_code/state/detail_cubit.dart/detail_cubit.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_cubit.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'package:muraloka/constant/name_router.dart';
 import 'package:muraloka/di.dart' as di;
 import 'package:muraloka/firebase_options.dart';
@@ -17,7 +18,6 @@ import 'package:muraloka/all_code/page/home_page.dart';
 import 'package:muraloka/all_code/page/setting_page.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   di.init;
   FirebaseUIAuth.configureProviders([EmailAuthProvider(), PhoneAuthProvider()]);
@@ -32,7 +32,7 @@ class MainApp extends StatelessWidget {
     final router = GoRouter(
       initialLocation: FirebaseAuth.instance.currentUser == null
           ? '/sign-in'
-          : '/paint',
+          : '/home',
       routes: <RouteBase>[
         GoRoute(
           path: '/sign-in',
@@ -91,20 +91,11 @@ class MainApp extends StatelessWidget {
       child: MaterialApp.router(
         routerConfig: router,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.green,
-            brightness: Brightness.light,
-          ),
+        theme: ThemeConfig.lightTheme.copyWith(
           textTheme: GoogleFonts.merriweatherTextTheme(),
         ),
-        darkTheme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.green,
-            brightness: Brightness.dark,
-          ),
+        // Menerapkan darkTheme dari ThemeConfig dan menggabungkannya dengan GoogleFonts
+        darkTheme: ThemeConfig.darkTheme.copyWith(
           textTheme: GoogleFonts.merriweatherTextTheme(
             ThemeData(brightness: Brightness.dark).textTheme,
           ),
