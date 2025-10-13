@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 // Ganti dengan ArtItem jika art_data.dart berisi model
 import 'package:muraloka/all_code/model/art_data.dart';
+import 'package:muraloka/all_code/model/project.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_cubit.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_state.dart';
 import 'package:muraloka/constant/constant.dart';
@@ -83,7 +84,7 @@ class HomePage extends StatelessWidget {
                   _buildSection(
                     context,
                     title: 'Resume your art',
-                    items: state.resumeArts,
+                    items: state.resumeProjects,
                     theme: theme,
                     bodyTextColor: bodyContentColor, // Teks body hitam
                   ),
@@ -92,19 +93,19 @@ class HomePage extends StatelessWidget {
                   _buildSection(
                     context,
                     title: 'Popular Art',
-                    items: state.popularArts,
+                    items: state.popularProjects,
                     theme: theme,
                     bodyTextColor: bodyContentColor, // Teks body hitam
                   ),
                   // 3. Popular Author
-                  _buildSection(
-                    context,
-                    title: 'Popular Author',
-                    items: state.popularAuthors,
-                    theme: theme,
-                    bodyTextColor: bodyContentColor, // Teks body hitam
-                    isAuthor: true,
-                  ),
+                  // _buildSection(
+                  //   context,
+                  //   title: 'Popular Author',
+                  //   items: state.popularAuthors,
+                  //   theme: theme,
+                  //   bodyTextColor: bodyContentColor, // Teks body hitam
+                  //   isAuthor: true,
+                  // ),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -196,7 +197,7 @@ class HomePage extends StatelessWidget {
   Widget _buildSection(
     BuildContext context, {
     required String title,
-    required List<ArtItem> items,
+    required List<Project> items,
     required ThemeManager theme,
     required Color bodyTextColor, // bodyTextColor = Colors.black
     bool isAuthor = false,
@@ -251,7 +252,7 @@ class HomePage extends StatelessWidget {
   // Widget _buildCardItem menggunakan bodyTextColor (hitam)
   Widget _buildCardItem(
     BuildContext context, {
-    required ArtItem item,
+    required Project item,
     required ThemeManager theme,
     required Color bodyTextColor,
     bool isAuthor = false,
@@ -277,7 +278,8 @@ class HomePage extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8.0),
                     child: Image.network(
-                      item.imageUrl,
+                      // item.imageUrl,
+                      item.projectId,
                       fit: BoxFit.cover,
                       height: isAuthor ? 120 : 160,
                       width: double.infinity,
@@ -303,11 +305,17 @@ class HomePage extends StatelessWidget {
                         color: Colors.black, // Latar belakang hitam
                         borderRadius: BorderRadius.circular(50),
                       ),
-                      child: Icon(
-                        item.isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: Colors.white, // Ikon selalu putih
-                        size: 16,
-                      ),
+                      child:
+                          // Icon(
+                          //   item.isLiked ? Icons.favorite : Icons.favorite_border,
+                          //   color: Colors.white, // Ikon selalu putih
+                          //   size: 16,
+                          // ),
+                          Icon(
+                            Icons.favorite_border,
+                            color: Colors.white, // Ikon selalu putih
+                            size: 16,
+                          ),
                     ),
                   ),
                 ],
@@ -326,7 +334,8 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                item.subtitle,
+                // item.subtitle,
+                item.title,
                 style: TextStyle(fontSize: 12, color: bodyTextColor),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

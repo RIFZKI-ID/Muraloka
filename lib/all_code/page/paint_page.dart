@@ -1,6 +1,7 @@
 import 'package:custom_flutter_painter/flutter_painter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
 import 'dart:ui' as ui;
 
 import 'package:go_router/go_router.dart';
@@ -115,9 +116,7 @@ class _PaintPageState extends State<PaintPage> {
               actions: [
                 // Delete the selected drawable
                 IconButton(
-                  icon: const Icon(
-                    Icons.add, // PhosphorIcons.trash,
-                  ),
+                  icon: const Icon(PhosphorIcons.trash),
                   onPressed: controller.selectedObjectDrawable == null
                       ? null
                       : removeSelectedDrawable,
@@ -133,16 +132,12 @@ class _PaintPageState extends State<PaintPage> {
                 ),
                 // Redo action
                 IconButton(
-                  icon: const Icon(
-                    Icons.add, // PhosphorIcons.arrowClockwise,
-                  ),
+                  icon: const Icon(PhosphorIcons.arrow_clockwise),
                   onPressed: controller.canRedo ? redo : null,
                 ),
                 // Undo action
                 IconButton(
-                  icon: const Icon(
-                    Icons.add, // PhosphorIcons.arrowCounterClockwise,
-                  ),
+                  icon: const Icon(PhosphorIcons.arrow_counter_clockwise),
                   onPressed: controller.canUndo ? undo : null,
                 ),
               ],
@@ -153,9 +148,7 @@ class _PaintPageState extends State<PaintPage> {
       // Generate image
       floatingActionButton: FloatingActionButton(
         onPressed: renderAndDisplayImage,
-        child: const Icon(
-          Icons.add, // PhosphorIcons.imageFill,
-        ),
+        child: const Icon(PhosphorIcons.image_fill),
       ),
       body: Stack(
         children: [
@@ -382,7 +375,7 @@ class _PaintPageState extends State<PaintPage> {
             // Free-style eraser
             IconButton(
               icon: Icon(
-                Icons.add, // PhosphorIcons.eraser,
+                PhosphorIcons.eraser,
                 color: controller.freeStyleMode == FreeStyleMode.erase
                     ? Theme.of(context).colorScheme.secondary
                     : null,
@@ -392,7 +385,7 @@ class _PaintPageState extends State<PaintPage> {
             // Free-style drawing
             IconButton(
               icon: Icon(
-                Icons.add, // PhosphorIcons.scribbleLoop,
+                PhosphorIcons.scribble_loop,
                 color: controller.freeStyleMode == FreeStyleMode.draw
                     ? Theme.of(context).colorScheme.secondary
                     : null,
@@ -402,7 +395,7 @@ class _PaintPageState extends State<PaintPage> {
             // Add text
             IconButton(
               icon: Icon(
-                Icons.add, // PhosphorIcons.textT,
+                PhosphorIcons.text_h,
                 color: textFocusNode.hasFocus
                     ? Theme.of(context).colorScheme.secondary
                     : null,
@@ -411,9 +404,7 @@ class _PaintPageState extends State<PaintPage> {
             ),
             // Add sticker image
             IconButton(
-              icon: const Icon(
-                Icons.add, // PhosphorIcons.sticker,
-              ),
+              icon: const Icon(PhosphorIcons.sticker),
               onPressed: addSticker,
             ),
             // Add shapes
@@ -472,17 +463,20 @@ class _PaintPageState extends State<PaintPage> {
   }
 
   static IconData getShapeIcon(ShapeFactory? shapeFactory) {
-    if (shapeFactory is LineFactory)
-      return Icons.add; //PhosphorIcons.lineSegment;
-    if (shapeFactory is ArrowFactory)
-      return Icons.add; // PhosphorIcons.arrowUpRight;
-    if (shapeFactory is DoubleArrowFactory) {
-      return Icons.add; //PhosphorIcons.arrowsHorizontal;
+    if (shapeFactory is LineFactory) {
+      return PhosphorIcons.line_segment;
     }
-    if (shapeFactory is RectangleFactory)
-      return Icons.add; //PhosphorIcons.rectangle;
-    if (shapeFactory is OvalFactory) return Icons.add; // PhosphorIcons.circle;
-    return Icons.add; // PhosphorIcons.polygon;
+    if (shapeFactory is ArrowFactory) {
+      return PhosphorIcons.arrow_up_right;
+    }
+    if (shapeFactory is DoubleArrowFactory) {
+      return PhosphorIcons.arrows_horizontal;
+    }
+    if (shapeFactory is RectangleFactory) {
+      return PhosphorIcons.rectangle;
+    }
+    if (shapeFactory is OvalFactory) return PhosphorIcons.circle;
+    return PhosphorIcons.polygon;
   }
 
   void undo() {
