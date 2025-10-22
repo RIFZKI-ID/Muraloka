@@ -5,6 +5,8 @@ import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
 import 'dart:ui' as ui;
 
 import 'package:go_router/go_router.dart';
+import 'package:muraloka/all_code/page/rendered_dialog.dart';
+import 'package:muraloka/all_code/page/sticker_dialog.dart';
 
 class PaintPage extends StatefulWidget {
   const PaintPage({Key? key}) : super(key: key);
@@ -24,7 +26,7 @@ class _PaintPageState extends State<PaintPage> {
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
 
-  static const List<String> imageLinks = [
+  static const List<String> stickerImageLinks = [
     "https://i.imgur.com/btoI5OX.png",
     "https://i.imgur.com/EXTQFt7.png",
     "https://i.imgur.com/EDNjJYL.png",
@@ -510,7 +512,7 @@ class _PaintPageState extends State<PaintPage> {
     final imageLink = await showDialog<String>(
       context: context,
       builder: (context) =>
-          const SelectStickerImageDialog(imagesLinks: imageLinks),
+          const SelectStickerImageDialog(imagesLinks: stickerImageLinks),
     );
     if (imageLink == null) return;
     controller.addImage(
@@ -593,77 +595,6 @@ class _PaintPageState extends State<PaintPage> {
     controller.replaceDrawable(
       imageDrawable,
       imageDrawable.copyWith(flipped: !imageDrawable.flipped),
-    );
-  }
-}
-
-class RenderedImageDialog extends StatelessWidget {
-  final Future<Uint8List?> imageFuture;
-
-  const RenderedImageDialog({Key? key, required this.imageFuture})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Rendered Image"),
-      content: FutureBuilder<Uint8List?>(
-        future: imageFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const SizedBox(
-              height: 50,
-              child: Center(child: CircularProgressIndicator.adaptive()),
-            );
-          }
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const SizedBox();
-          }
-          return InteractiveViewer(
-            maxScale: 10,
-            child: Image.memory(snapshot.data!),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class SelectStickerImageDialog extends StatelessWidget {
-  final List<String> imagesLinks;
-
-  const SelectStickerImageDialog({Key? key, this.imagesLinks = const []})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Select sticker"),
-      content: imagesLinks.isEmpty
-          ? const Text("No images")
-          : FractionallySizedBox(
-              heightFactor: 0.5,
-              child: SingleChildScrollView(
-                child: Wrap(
-                  children: [
-                    for (final imageLink in imagesLinks)
-                      InkWell(
-                        onTap: () => Navigator.pop(context, imageLink),
-                        child: FractionallySizedBox(
-                          widthFactor: 1 / 4,
-                          child: Image.network(imageLink),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-      actions: [
-        TextButton(
-          child: const Text("Cancel"),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
     );
   }
 }
