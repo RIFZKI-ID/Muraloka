@@ -79,7 +79,11 @@ service cloud.firestore {
       match /projects/{projectId} {
         allow read: if isAuthenticated() && isOwner(userId);
         allow create: if isAuthenticated() && isOwner(userId);
-        allow update: if isAuthenticated() && isOwner(userId);
+        // Allow update if owner OR if transferring ownership after purchase
+        allow update: if isAuthenticated() && 
+          (isOwner(userId) || 
+           (request.resource.data.keys().hasAny(['purchasedFrom', 'purchasedAt']) && 
+            request.auth.uid == request.resource.data.get('ownerId', '')));
         allow delete: if isAuthenticated() && isOwner(userId);
         
         // Layers subcollection in private projects
@@ -125,8 +129,31 @@ service cloud.firestore {
     match /artifacts/{appId}/public/data/store_listings/{listingId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && 
+      allow update: if isAuthenticated() && 
+        (resource.data.sellerId == request.auth.uid || 
+         request.resource.data.keys().hasAny(['purchaseCount', 'lastPurchasedAt', 'lastPurchasedBy']));
+      allow delete: if isAuthenticated() && 
         resource.data.sellerId == request.auth.uid;
+    }
+    
+    // Transactions for payment records
+    match /artifacts/{appId}/public/data/transactions/{transactionId} {
+      allow read: if isAuthenticated() && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+    }
+    
+    // Purchases record
+    match /artifacts/{appId}/public/data/purchases/{purchaseId} {
+      allow read: if isAuthenticated() && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
     }
   }
 }

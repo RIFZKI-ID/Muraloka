@@ -94,7 +94,7 @@ class HomePage extends StatelessWidget {
             final hasResumeProjects = state.resumeProjects.isNotEmpty;
             final hasPopularProjects = state.popularProjects.isNotEmpty;
             final hasAnyData = hasResumeProjects || hasPopularProjects;
-            
+
             if (!hasAnyData) {
               // Show empty state
               return Center(
@@ -118,10 +118,7 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       'Start creating your first artwork',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: subtitleColor,
-                      ),
+                      style: TextStyle(fontSize: 16, color: subtitleColor),
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
@@ -141,7 +138,7 @@ class HomePage extends StatelessWidget {
                 ),
               );
             }
-            
+
             return SingleChildScrollView(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Column(
@@ -159,7 +156,7 @@ class HomePage extends StatelessWidget {
                       subtitleColor: subtitleColor,
                     ),
                   if (hasResumeProjects) SizedBox(height: 8),
-                  
+
                   // 2. Popular Art - only show if has data
                   if (hasPopularProjects)
                     _buildSection(
@@ -171,7 +168,7 @@ class HomePage extends StatelessWidget {
                       cardBackgroundColor: cardBackgroundColor,
                       subtitleColor: subtitleColor,
                     ),
-                  
+
                   const SizedBox(height: 20),
                 ],
               ),
@@ -260,15 +257,6 @@ class HomePage extends StatelessWidget {
             onTap: () => context.goNamed(SETTING_PAGE_ROUTE),
             textColor: Colors.white,
           ),
-          const Divider(color: Colors.white38),
-          _drawerItem(
-            icon: Icons.logout,
-            text: 'Keluar',
-            onTap: () {
-              Navigator.pop(context);
-            },
-            textColor: Colors.white,
-          ),
         ],
       ),
     );
@@ -300,7 +288,7 @@ class HomePage extends StatelessWidget {
   }) {
     // Don't render if no items
     if (items.isEmpty) return const SizedBox.shrink();
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -439,7 +427,10 @@ class HomePage extends StatelessWidget {
               Text(
                 // item.subtitle,
                 item.name,
-                style: TextStyle(fontSize: 12, color: subtitleColor), // Dynamic subtitle color
+                style: TextStyle(
+                  fontSize: 12,
+                  color: subtitleColor,
+                ), // Dynamic subtitle color
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

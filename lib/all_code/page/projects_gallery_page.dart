@@ -1081,7 +1081,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: AppBar(backgroundColor: Color(),
         title: const Text('My Projects'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

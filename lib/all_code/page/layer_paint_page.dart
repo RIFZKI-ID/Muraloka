@@ -1134,6 +1134,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Delete current layer
+  // ignore: unused_element
   Future<void> _deleteCurrentLayer() async {
     if (currentProject == null || layers.length <= 1) {
       _showError('Cannot delete the last layer');
@@ -1304,6 +1305,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Delete layer by index (not currently selected)
+  // ignore: unused_element
   Future<void> _deleteLayer(int index) async {
     if (currentProject == null || index < 0 || index >= layers.length) return;
 
@@ -1434,6 +1436,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Merge selected layers by their IDs
+  // ignore: unused_element
   Future<void> _mergeSelectedLayers(List<String> layerIds) async {
     if (currentProject == null || layerIds.length < 2) {
       _showError('Please select at least 2 layers to merge');
@@ -2223,6 +2226,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Calculate bounding box of all drawable content
+  // ignore: unused_element
   Rect? _calculateContentBounds() {
     if (controller.value.drawables.isEmpty) return null;
 
@@ -2266,6 +2270,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Export canvas with cropping to content bounds
+  // ignore: unused_element
   Future<Uint8List> _exportCroppedCanvas(Rect contentBounds) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
@@ -2384,16 +2389,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         );
       }
 
-      setState(() {
-        currentProject = updatedProject;
-      });
+      // Check if widget is still mounted before calling setState
+      if (mounted) {
+        setState(() {
+          currentProject = updatedProject;
+        });
+      }
 
       // Update marketplace listing if exists
       await _updateMarketplaceListing(currentProject!.id, null, thumbnailBase64);
 
       print('✅ Thumbnail updated successfully');
     } catch (e) {
-      print('⚠️ Failed to update thumbnail: $e');
+      print('! Failed to update thumbnail: $e');
       // Don't show error to user, this is not critical
     }
   }

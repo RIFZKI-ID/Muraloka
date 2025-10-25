@@ -14,6 +14,7 @@ import '../data_api/project_repository.dart';
 import '../data_api/layer_repository.dart';
 import '../widgets/ui_helpers.dart';
 import '../widgets/animated_widgets.dart';
+import '../../presentation/pages/qris_webview_page.dart';
 
 /// Marketplace page untuk menjual dan membeli karya seni
 class MarketplacePage extends StatefulWidget {
@@ -521,25 +522,35 @@ class _MarketplacePageState extends State<MarketplacePage>
     );
   }
 
-  /// Purchase listing (Midtrans integration placeholder)
+  /// Purchase listing (QRIS Payment Integration - Simplified)
   Future<void> _purchaseListing(StoreListing listing) async {
-    // TODO: Integrate Midtrans Snap for payment
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Payment'),
-        content: const Text(
-          'Midtrans integration coming soon!\n\n'
-          'This will open Midtrans Snap payment gateway.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+    try {
+      // Navigate to QRIS WebView (Simple Display)
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (context) => QRISWebViewPage(
+            listingTitle: listing.title,
+            price: listing.price,
           ),
-        ],
-      ),
-    );
+        ),
+      );
+
+      if (result == true) {
+        // Payment completed (user clicked "Selesai")
+        _showSuccess('Pembayaran berhasil! Silakan cek "My Projects" untuk mengakses project.');
+        
+        // TODO: Backend integration
+        // - Verify payment status dari payment gateway
+        // - Transfer ownership project ke buyer
+        // - Kirim notifikasi ke seller dan buyer
+        // - Update listing status (sold out jika one-time purchase)
+        
+        // Refresh data
+        await _refreshData();
+      }
+    } catch (e) {
+      _showError('Gagal membuka pembayaran: $e');
+    }
   }
 
   /// Toggle listing active status
