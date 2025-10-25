@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
 import 'package:go_router/go_router.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -188,18 +189,24 @@ class _MarketplacePageState extends State<MarketplacePage>
       final mvp.Project project = data['project'];
 
       print('Publishing project: ${project.name} (ID: ${project.id})');
-      print('Initial thumbnail: ${project.thumbnailBase64?.substring(0, 50) ?? "null"}...');
+      print(
+        'Initial thumbnail: ${project.thumbnailBase64?.substring(0, 50) ?? "null"}...',
+      );
 
       // Generate thumbnail if project doesn't have one
       String? thumbnailBase64 = project.thumbnailBase64;
       if (thumbnailBase64 == null || thumbnailBase64.isEmpty) {
         print('Generating thumbnail for project...');
         thumbnailBase64 = await _generateProjectThumbnail(project);
-        print('Generated thumbnail: ${thumbnailBase64?.substring(0, 50) ?? "null"}...');
+        print(
+          'Generated thumbnail: ${thumbnailBase64?.substring(0, 50) ?? "null"}...',
+        );
       }
 
       if (thumbnailBase64 == null || thumbnailBase64.isEmpty) {
-        _showError('Cannot publish: No thumbnail available. Please draw something first.');
+        _showError(
+          'Cannot publish: No thumbnail available. Please draw something first.',
+        );
         return;
       }
 
@@ -217,7 +224,9 @@ class _MarketplacePageState extends State<MarketplacePage>
       );
 
       await listingRepo.createListing(listing);
-      print('Listing created successfully with thumbnail length: ${thumbnailBase64.length}');
+      print(
+        'Listing created successfully with thumbnail length: ${thumbnailBase64.length}',
+      );
       _showSuccess('Published to store successfully!');
       setState(() {}); // Refresh listings
     } catch (e) {
@@ -230,13 +239,13 @@ class _MarketplacePageState extends State<MarketplacePage>
   Future<String?> _generateProjectThumbnail(mvp.Project project) async {
     try {
       print('Generating thumbnail for project: ${project.id}');
-      
+
       // Get all layers for the project
       final layerRepo = LayerRepository(appId: appId);
       final layers = await layerRepo.streamSharedLayers(project.id).first;
 
       print('Found ${layers.length} layers');
-      
+
       if (layers.isEmpty) {
         print('No layers to render');
         return null; // No layers to render
@@ -264,7 +273,9 @@ class _MarketplacePageState extends State<MarketplacePage>
       for (final layer in sortedLayers) {
         if (!layer.isVisible) continue;
 
-        print('Drawing layer ${layer.name} with ${layer.strokes.length} strokes');
+        print(
+          'Drawing layer ${layer.name} with ${layer.strokes.length} strokes',
+        );
 
         // Draw each stroke in the layer
         for (final strokeData in layer.strokes) {
@@ -307,9 +318,9 @@ class _MarketplacePageState extends State<MarketplacePage>
       final picture = recorder.endRecording();
       final thumbnailWidth = 400;
       final thumbnailHeight = (400 * size.height / size.width).toInt();
-      
+
       print('Creating thumbnail: ${thumbnailWidth}x$thumbnailHeight');
-      
+
       final image = await picture.toImage(thumbnailWidth, thumbnailHeight);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
@@ -321,7 +332,7 @@ class _MarketplacePageState extends State<MarketplacePage>
       // Convert to base64
       final bytes = byteData.buffer.asUint8List();
       final base64String = base64Encode(bytes);
-      
+
       print('Thumbnail generated: ${base64String.length} bytes');
       return base64String;
     } catch (e) {
@@ -531,20 +542,25 @@ class _MarketplacePageState extends State<MarketplacePage>
           builder: (context) => QRISWebViewPage(
             listingTitle: listing.title,
             price: listing.price,
+            // image: Image.memory(
+            //   base64Decode(listing.thumbnailBase64!),
+            // ),
           ),
         ),
       );
 
       if (result == true) {
         // Payment completed (user clicked "Selesai")
-        _showSuccess('Pembayaran berhasil! Silakan cek "My Projects" untuk mengakses project.');
-        
+        _showSuccess(
+          'Pembayaran berhasil! Silakan cek "My Projects" untuk mengakses project.',
+        );
+
         // TODO: Backend integration
         // - Verify payment status dari payment gateway
         // - Transfer ownership project ke buyer
         // - Kirim notifikasi ke seller dan buyer
         // - Update listing status (sold out jika one-time purchase)
-        
+
         // Refresh data
         await _refreshData();
       }
@@ -596,8 +612,10 @@ class _MarketplacePageState extends State<MarketplacePage>
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeManager.of(context);
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.secondary1,
         title: const Text('Marketplace'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -606,7 +624,8 @@ class _MarketplacePageState extends State<MarketplacePage>
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white, // Warna text saat dipilih (putih)
-          unselectedLabelColor: Colors.white70, // Warna text saat tidak dipilih (putih transparan)
+          unselectedLabelColor: Colors
+              .white70, // Warna text saat tidak dipilih (putih transparan)
           labelStyle: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold, // Bold saat dipilih
@@ -719,13 +738,18 @@ class _MarketplacePageState extends State<MarketplacePage>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(PhosphorIcons.warning_circle,
-                              size: 64, color: Colors.orange),
+                          const Icon(
+                            PhosphorIcons.warning_circle,
+                            size: 64,
+                            color: Colors.orange,
+                          ),
                           const SizedBox(height: 16),
                           const Text(
                             'Failed to load listings',
                             style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -761,7 +785,9 @@ class _MarketplacePageState extends State<MarketplacePage>
             listings = listings
                 .where(
                   (l) =>
-                      l.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                      l.title.toLowerCase().contains(
+                        searchQuery.toLowerCase(),
+                      ) ||
                       l.tags.any(
                         (t) =>
                             t.toLowerCase().contains(searchQuery.toLowerCase()),
@@ -776,7 +802,9 @@ class _MarketplacePageState extends State<MarketplacePage>
               listings.sort((a, b) => b.totalSold.compareTo(a.totalSold));
               break;
             case 'top-rated':
-              listings.sort((a, b) => b.averageRating.compareTo(a.averageRating));
+              listings.sort(
+                (a, b) => b.averageRating.compareTo(a.averageRating),
+              );
               break;
             case 'newest':
               listings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -847,13 +875,18 @@ class _MarketplacePageState extends State<MarketplacePage>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(PhosphorIcons.warning_circle,
-                              size: 64, color: Colors.orange),
+                          const Icon(
+                            PhosphorIcons.warning_circle,
+                            size: 64,
+                            color: Colors.orange,
+                          ),
                           const SizedBox(height: 16),
                           const Text(
                             'Failed to load your listings',
                             style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -886,7 +919,8 @@ class _MarketplacePageState extends State<MarketplacePage>
                   child: EmptyStateWidget(
                     icon: PhosphorIcons.storefront,
                     title: 'You haven\'t published any listings yet',
-                    subtitle: 'Share your artwork with the world and start earning!',
+                    subtitle:
+                        'Share your artwork with the world and start earning!',
                     action: ElevatedButton.icon(
                       onPressed: _showPublishDialog,
                       icon: const Icon(PhosphorIcons.plus),
@@ -1023,17 +1057,15 @@ class _FullScreenImageViewer extends StatefulWidget {
   final Uint8List imageBytes;
   final String title;
 
-  const _FullScreenImageViewer({
-    required this.imageBytes,
-    required this.title,
-  });
+  const _FullScreenImageViewer({required this.imageBytes, required this.title});
 
   @override
   State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
 }
 
 class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
-  final TransformationController _transformationController = TransformationController();
+  final TransformationController _transformationController =
+      TransformationController();
 
   @override
   void dispose() {
@@ -1065,10 +1097,7 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
         minScale: 0.5,
         maxScale: 4.0,
         child: Center(
-          child: Image.memory(
-            widget.imageBytes,
-            fit: BoxFit.contain,
-          ),
+          child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
         ),
       ),
     );

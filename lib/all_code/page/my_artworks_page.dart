@@ -9,6 +9,7 @@ import 'package:muraloka/all_code/data_api/store_listing_repository.dart';
 import 'package:muraloka/all_code/model/canvas_artwork.dart';
 import 'package:muraloka/all_code/model/project.dart' as mvp;
 import 'package:muraloka/all_code/model/store_listing.dart';
+import 'package:muraloka/constant/constant.dart';
 
 class MyArtworksPage extends StatefulWidget {
   const MyArtworksPage({Key? key}) : super(key: key);
@@ -49,8 +50,10 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeManager.of(context);
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.secondary1,
         title: const Text('My Artworks'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

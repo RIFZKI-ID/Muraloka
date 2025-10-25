@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:muraloka/all_code/model/project.dart';
+import 'package:muraloka/constant/constant.dart';
 
 class DetailPage extends StatelessWidget {
   final Project project;
@@ -8,7 +9,9 @@ class DetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeManager.of(context);
     return Scaffold(
+      backgroundColor: theme.secondary1,
       appBar: AppBar(title: Text(project.name)),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

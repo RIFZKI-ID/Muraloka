@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:math';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
@@ -3286,8 +3287,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeManager.of(context);
     if (isLoading) {
       return Scaffold(
+        backgroundColor: theme.secondary1,
         appBar: AppBar(title: const Text('Loading...')),
         body: const CustomLoadingIndicator(message: 'Preparing your canvas...'),
       );
@@ -3313,6 +3316,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           },
           child: Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.secondary1,
         title: Text(currentProject?.name ?? 'Canvas'),
         automaticallyImplyLeading: false, // Remove back button
         leading: IconButton(

@@ -186,13 +186,14 @@ class HomePage extends StatelessWidget {
     ThemeManager theme,
     Color drawerContentColor,
   ) {
+    final themeNew = ThemeManager.of(context);
     return Drawer(
-      backgroundColor: theme.primary1, // Menggunakan primary1 untuk Drawer
+       backgroundColor: themeNew.secondary1, // Menggunakan primary1 untuk Drawer
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           DrawerHeader(
-            decoration: BoxDecoration(color: theme.primary1),
+            decoration: BoxDecoration(color: themeNew.secondary1),
             child: Text(
               'Muraloka',
               style: TextStyle(

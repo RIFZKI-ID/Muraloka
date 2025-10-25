@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
 import 'package:go_router/go_router.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -1080,8 +1081,10 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeManager.of(context);
     return Scaffold(
-      appBar: AppBar(backgroundColor: Color(),
+      appBar: AppBar(
+        backgroundColor: theme.secondary1,
         title: const Text('My Projects'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

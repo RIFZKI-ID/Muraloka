@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'package:provider/provider.dart';
 import 'package:muraloka/all_code/page/paint_page.dart';
 import 'package:muraloka/all_code/page/my_artworks_page.dart';
@@ -51,20 +52,16 @@ class MainApp extends StatelessWidget {
             showAuthActionSwitch: true,
             showPasswordVisibilityToggle: true,
             actions: [
-              AuthStateChangeAction<SignedIn>(
-                (context, state) async {
-                  // Sync user profile ke Firestore setelah login
-                  await userProfileService.syncCurrentUserProfile();
-                  context.go('/home');
-                },
-              ),
-              AuthStateChangeAction<UserCreated>(
-                (context, state) async {
-                  // Sync user profile ke Firestore setelah registrasi
-                  await userProfileService.syncCurrentUserProfile();
-                  context.go('/sign-in');
-                },
-              ),
+              AuthStateChangeAction<SignedIn>((context, state) async {
+                // Sync user profile ke Firestore setelah login
+                await userProfileService.syncCurrentUserProfile();
+                context.go('/home');
+              }),
+              AuthStateChangeAction<UserCreated>((context, state) async {
+                // Sync user profile ke Firestore setelah registrasi
+                await userProfileService.syncCurrentUserProfile();
+                context.go('/sign-in');
+              }),
               AuthStateChangeAction<AuthFailed>(
                 (context, state) => context.go('/sign-in'),
               ),
@@ -93,6 +90,7 @@ class MainApp extends StatelessWidget {
           path: '/profile',
           builder: (context, state) => ProfileScreen(
             appBar: AppBar(
+              backgroundColor: ThemeManager.of(context).secondary1,
               title: const Text('Profil Pengguna'),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -137,7 +135,9 @@ class MainApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             themeMode: themeProvider.themeMode,
             theme: AppTheme.lightTheme.copyWith(
-              textTheme: GoogleFonts.merriweatherTextTheme(),
+              textTheme: GoogleFonts.merriweatherTextTheme(
+                ThemeData(brightness: Brightness.dark).textTheme,
+              ),
               pageTransitionsTheme: const PageTransitionsTheme(
                 builders: {
                   TargetPlatform.android: CupertinoPageTransitionsBuilder(),

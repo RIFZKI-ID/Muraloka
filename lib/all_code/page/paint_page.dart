@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:muraloka/all_code/page/rendered_dialog.dart';
 import 'package:muraloka/all_code/page/sticker_dialog.dart';
+import 'package:muraloka/constant/constant.dart';
 
 class PaintPage extends StatefulWidget {
   const PaintPage({Key? key}) : super(key: key);
@@ -99,6 +100,7 @@ class _PaintPageState extends State<PaintPage> {
   }
 
   Widget buildDefault(BuildContext context) {
+    final theme = ThemeManager.of(context);
     return Scaffold(
       appBar: PreferredSize(
         preferredSize: const Size(double.infinity, kToolbarHeight),
@@ -108,6 +110,7 @@ class _PaintPageState extends State<PaintPage> {
           child: const Text("Canvas"),
           builder: (context, _, child) {
             return AppBar(
+              backgroundColor: theme.secondary1,
               title: child,
               leading: IconButton(
                 onPressed: () {

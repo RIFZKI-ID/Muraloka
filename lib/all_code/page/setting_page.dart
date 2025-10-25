@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:muraloka/constant/constant.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
 import 'package:go_router/go_router.dart';
@@ -10,9 +11,10 @@ class SettingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-
+    final theme = ThemeManager.of(context);
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.secondary1,
         title: const Text('Settings'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -26,22 +28,17 @@ class SettingPage extends StatelessWidget {
             padding: EdgeInsets.all(16.0),
             child: Text(
               'Appearance',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(
             leading: Icon(
-              themeProvider.isDarkMode 
-                  ? PhosphorIcons.moon_fill 
+              themeProvider.isDarkMode
+                  ? PhosphorIcons.moon_fill
                   : PhosphorIcons.sun_fill,
             ),
             title: const Text('Dark Mode'),
-            subtitle: Text(
-              themeProvider.isDarkMode ? 'Enabled' : 'Disabled',
-            ),
+            subtitle: Text(themeProvider.isDarkMode ? 'Enabled' : 'Disabled'),
             trailing: Switch(
               value: themeProvider.isDarkMode,
               onChanged: (value) {
@@ -57,16 +54,13 @@ class SettingPage extends StatelessWidget {
             onTap: () => _showThemeModeDialog(context, themeProvider),
           ),
           const Divider(),
-          
+
           // About Section
           const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(
               'About',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(
@@ -84,16 +78,13 @@ class SettingPage extends StatelessWidget {
             },
           ),
           const Divider(),
-          
+
           // Help & Support
           const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(
               'Help & Support',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(

@@ -1,15 +1,20 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 /// Simple WebView page to display QRIS payment image
 class QRISWebViewPage extends StatefulWidget {
   final String listingTitle;
   final double price;
+  // final Image image;
 
   const QRISWebViewPage({
     Key? key,
     required this.listingTitle,
     required this.price,
+    // required this.image,
   }) : super(key: key);
 
   @override
@@ -19,22 +24,40 @@ class QRISWebViewPage extends StatefulWidget {
 class _QRISWebViewPageState extends State<QRISWebViewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
+  String? _base64Image;
 
   @override
   void initState() {
     super.initState();
     _initializeWebView();
+    // _extractBase64FromImage();
   }
 
-  void _initializeWebView() {
+  // /// Fungsi untuk mengambil Base64 string dari Image.memory
+  // void _extractBase64FromImage() async {
+  //   if (widget.image.image is MemoryImage) {
+  //     final memoryImage = widget.image.image as MemoryImage;
+  //     final bytes = memoryImage.bytes;
+  //     setState(() {
+  //       _base64Image = base64Encode(bytes);
+  //     });
+  //     _initializeWebView();
+  //   }
+  // }
+
+  void _initializeWebView() async {
     // Format price to Rupiah
-    final formattedPrice = 'Rp ${widget.price.toStringAsFixed(0).replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (Match m) => '${m[1]}.',
-    )}';
-    
+    final formattedPrice =
+        'Rp ${widget.price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}';
+
+// 🔹 Muat file gambar dari assets
+  final byteData = await rootBundle.load('assets/images/barcode_pembayaran.jpeg');
+  final bytes = byteData.buffer.asUint8List();
+  final base64Image = base64Encode(bytes);
+
     // Create HTML content with the QRIS image
-    final htmlContent = '''
+    final htmlContent =
+        '''
     <!DOCTYPE html>
     <html>
     <head>
@@ -186,6 +209,13 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
             </div>
             
             <div class="content">
+
+              //  <!-- Thumbnail Preview -->
+              //  <div class="preview">
+              //    <img src="data:image/png;base64,$_base64Image" alt="Listing Preview" />
+              //    <p style="margin-top:8px; color:#6c757d; font-size:13px;">Preview: ${widget.listingTitle}</p>
+              //  </div>
+
                 <!-- Payment Info -->
                 <div class="info-card">
                     <div class="info-row">
@@ -200,7 +230,7 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
 
                 <!-- QR Code Image -->
                 <div class="qr-container">
-                    <img src="https://raw.githubusercontent.com/RIFZKI-ID/Muraloka/refs/heads/updated/assets/images/qris_example.jpg" alt="QRIS Payment">
+                    <img src="data:image/jpeg;base64,$base64Image" alt="QRIS Payment">
                     <p class="qr-label">
                         <strong>RIFZKI ID</strong><br>
                         NMID: ID1024318412755<br>
@@ -294,10 +324,7 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(),
-            ),
+          if (_isLoading) const Center(child: CircularProgressIndicator()),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -338,7 +365,10 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
                           ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context); // Close dialog
-                              Navigator.pop(context, true); // Return to marketplace with success
+                              Navigator.pop(
+                                context,
+                                true,
+                              ); // Return to marketplace with success
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
