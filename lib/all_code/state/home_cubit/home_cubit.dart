@@ -1,6 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:muraloka/all_code/data_api/firestore_service.dart';
-import 'package:muraloka/all_code/model/art_data.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_state.dart';
 
 class HomeCubit extends Cubit<HomeState> {

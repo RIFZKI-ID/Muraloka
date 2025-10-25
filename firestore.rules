@@ -1,0 +1,132 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isProjectOwner(projectData) {
+      return isAuthenticated() && request.auth.uid == projectData.ownerId;
+    }
+    
+    function isCollaborator(projectData) {
+      return isAuthenticated() && 
+        request.auth.uid in projectData.collaboratorIds;
+    }
+    
+    function canAccessProject(projectData) {
+      return isProjectOwner(projectData) || isCollaborator(projectData);
+    }
+    
+    function isJoiningViaRoomCode() {
+      // Check if user is adding themselves to collaboratorIds via room code
+      return isAuthenticated() && 
+        request.resource.data.collaboratorIds.hasAll([request.auth.uid]) &&
+        !resource.data.collaboratorIds.hasAll([request.auth.uid]) &&
+        resource.data.keys().hasAny(['roomCode']) &&
+        resource.data.roomCode != null;
+    }
+    
+    // ==================== COLLECTION GROUP QUERIES ====================
+    // Allow reading projects via collectionGroup if they have a roomCode (for joining)
+    match /{path=**}/projects/{projectId} {
+      allow read: if isAuthenticated() && resource.data.roomCode != null;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+    
+    // Projects collection (old structure - for backward compatibility)
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.ownerId == request.auth.uid || 
+         request.auth.uid in resource.data.collaboratorIds);
+    }
+    
+    // Canvas artworks (old structure)
+    match /canvas_artworks/{artworkId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== NEW STRUCTURE ====================
+    
+    // General artifacts collection - allow authenticated users
+    match /artifacts/{appId}/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Private user data and projects
+    match /artifacts/{appId}/users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+      
+      // Private projects collection
+      match /projects/{projectId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow create: if isAuthenticated() && isOwner(userId);
+        allow update: if isAuthenticated() && isOwner(userId);
+        allow delete: if isAuthenticated() && isOwner(userId);
+        
+        // Layers subcollection in private projects
+        match /layers/{layerId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create, update, delete: if isAuthenticated() && isOwner(userId);
+        }
+      }
+    }
+    
+    // Public data section
+    match /artifacts/{appId}/public/data {
+      allow read: if isAuthenticated();
+      
+      // Shared projects collection (new path: /artifacts/{appId}/public/data/projects_shared)
+      match /projects_shared/{projectId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        
+        // Allow update if:
+        // 1. User is owner, OR
+        // 2. User is collaborator, OR
+        // 3. User is joining via room code
+        allow update: if isAuthenticated() && 
+          (isProjectOwner(resource.data) || 
+           isCollaborator(resource.data) ||
+           isJoiningViaRoomCode());
+           
+        allow delete: if isAuthenticated() && 
+          isProjectOwner(resource.data);
+        
+        // Layers subcollection in shared projects
+        match /layers/{layerId} {
+          allow read: if isAuthenticated();
+          // Allow write if user is owner or collaborator
+          allow create, update, delete: if isAuthenticated() &&
+            canAccessProject(get(/databases/$(database)/documents/artifacts/$(appId)/public/data/projects_shared/$(projectId)).data);
+        }
+      }
+    }
+    
+    // Store listings for marketplace
+    match /artifacts/{appId}/public/data/store_listings/{listingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        resource.data.sellerId == request.auth.uid;
+    }
+  }
+}

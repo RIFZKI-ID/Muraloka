@@ -6,16 +6,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:muraloka/all_code/page/paint_page.dart';
+import 'package:muraloka/all_code/page/my_artworks_page.dart';
+import 'package:muraloka/all_code/page/projects_gallery_page.dart';
+import 'package:muraloka/all_code/page/marketplace_page.dart';
+import 'package:muraloka/all_code/providers/theme_provider.dart';
+import 'package:muraloka/all_code/theme/app_theme.dart';
 import 'package:muraloka/all_code/state/detail_cubit.dart/detail_cubit.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_cubit.dart';
-import 'package:muraloka/constant/constant.dart';
 import 'package:muraloka/constant/name_router.dart';
 import 'package:muraloka/di.dart' as di;
 import 'package:muraloka/firebase_options.dart';
 // import 'package:muraloka/presentation/cubit/popular_paint_cubit/popular_paint_cubit.dart';
 import 'package:muraloka/all_code/page/home_page.dart';
 import 'package:muraloka/all_code/page/setting_page.dart';
+import 'package:muraloka/all_code/services/user_profile_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +37,9 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // User profile service untuk sync auth -> Firestore
+    final userProfileService = UserProfileService();
+
     final router = GoRouter(
       initialLocation: FirebaseAuth.instance.currentUser == null
           ? '/sign-in'
@@ -43,10 +52,18 @@ class MainApp extends StatelessWidget {
             showPasswordVisibilityToggle: true,
             actions: [
               AuthStateChangeAction<SignedIn>(
-                (context, state) => context.go('/home'),
+                (context, state) async {
+                  // Sync user profile ke Firestore setelah login
+                  await userProfileService.syncCurrentUserProfile();
+                  context.go('/home');
+                },
               ),
               AuthStateChangeAction<UserCreated>(
-                (context, state) => context.go('/sign-in'),
+                (context, state) async {
+                  // Sync user profile ke Firestore setelah registrasi
+                  await userProfileService.syncCurrentUserProfile();
+                  context.go('/sign-in');
+                },
               ),
               AuthStateChangeAction<AuthFailed>(
                 (context, state) => context.go('/sign-in'),
@@ -60,6 +77,18 @@ class MainApp extends StatelessWidget {
           builder: (context, state) => HomePage(),
         ),
         GoRoute(path: '/paint', builder: (context, state) => PaintPage()),
+        GoRoute(
+          path: '/my-artworks',
+          builder: (context, state) => MyArtworksPage(),
+        ),
+        GoRoute(
+          path: '/projects',
+          builder: (context, state) => ProjectsGalleryPage(),
+        ),
+        GoRoute(
+          path: '/marketplace',
+          builder: (context, state) => MarketplacePage(),
+        ),
         GoRoute(
           path: '/profile',
           builder: (context, state) => ProfileScreen(
@@ -95,24 +124,46 @@ class MainApp extends StatelessWidget {
         ),
       ],
     );
-    return MultiBlocProvider(
+    return MultiProvider(
       providers: [
-        // BlocProvider(create: (context) => di.locator<PopularPaintCubit>()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         BlocProvider<HomeCubit>(create: (context) => HomeCubit()),
         BlocProvider<DetailCubit>(create: (context) => DetailCubit()),
       ],
-      child: MaterialApp.router(
-        routerConfig: router,
-        debugShowCheckedModeBanner: false,
-        theme: ThemeConfig.lightTheme.copyWith(
-          textTheme: GoogleFonts.merriweatherTextTheme(),
-        ),
-        // Menerapkan darkTheme dari ThemeConfig dan menggabungkannya dengan GoogleFonts
-        darkTheme: ThemeConfig.darkTheme.copyWith(
-          textTheme: GoogleFonts.merriweatherTextTheme(
-            ThemeData(brightness: Brightness.dark).textTheme,
-          ),
-        ),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp.router(
+            routerConfig: router,
+            debugShowCheckedModeBanner: false,
+            themeMode: themeProvider.themeMode,
+            theme: AppTheme.lightTheme.copyWith(
+              textTheme: GoogleFonts.merriweatherTextTheme(),
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+                  TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            darkTheme: AppTheme.darkTheme.copyWith(
+              textTheme: GoogleFonts.merriweatherTextTheme(
+                ThemeData(brightness: Brightness.dark).textTheme,
+              ),
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+                  TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                  TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }

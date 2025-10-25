@@ -10,6 +10,7 @@ import 'package:get_it/get_it.dart';
 // import 'package:muraloka/presentation/cubit/cubit_cubit.dart';
 // import 'package:muraloka/presentation/cubit/popular_paint_cubit/popular_paint_cubit.dart';
 import 'package:dio/dio.dart';
+import 'all_code/data_api/invitation_repository.dart';
 
 final locator = GetIt.instance;
 
@@ -27,6 +28,11 @@ void init() {
   //     localDataSource: locator(),
   //   ),
   // );
+  
+  // Invitation Repository (appId will be set in main.dart after getting user)
+  locator.registerLazySingleton<InvitationRepository>(
+    () => InvitationRepository(appId: 'default'),
+  );
 
   // helper
   // locator.registerLazySingleton<PaintDatabaseHelper>(

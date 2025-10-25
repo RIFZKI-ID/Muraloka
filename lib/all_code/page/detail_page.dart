@@ -9,26 +9,22 @@ class DetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(project.title)),
+      appBar: AppBar(title: Text(project.name)),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Owner: ${project.ownerId}'),
-            Text('Project ID: ${project.projectId}'),
-            Text('Version: ${project.version}'),
-            Text('Visibility: ${project.visibility}'),
+            Text('Project ID: ${project.id}'),
+            Text('Public: ${project.isPublic ? "Yes" : "No"}'),
+            Text('Canvas: ${project.canvasWidth}x${project.canvasHeight}'),
             Text('Created At: ${project.createdAt.toString()}'),
             Text('Updated At: ${project.updatedAt.toString()}'),
-            SizedBox(height: 10),
-            Text('Collaborators:'),
-            for (var collaborator in project.collaborators)
-              Text('- $collaborator'),
-            SizedBox(height: 10),
-            Text('Active Editors:'),
-            for (var editor in project.activeEditors)
-              Text('- $editor'),
+            const SizedBox(height: 10),
+            Text('Collaborators (${project.collaboratorIds.length}):'),
+            for (var collaboratorId in project.collaboratorIds)
+              Text('- $collaboratorId'),
           ],
         ),
       ),

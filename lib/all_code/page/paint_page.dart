@@ -2,9 +2,9 @@ import 'package:custom_flutter_painter/flutter_painter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:ui' as ui;
 
-import 'package:go_router/go_router.dart';
 import 'package:muraloka/all_code/page/rendered_dialog.dart';
 import 'package:muraloka/all_code/page/sticker_dialog.dart';
 
@@ -371,89 +371,103 @@ class _PaintPageState extends State<PaintPage> {
       ),
       bottomNavigationBar: ValueListenableBuilder(
         valueListenable: controller,
-        builder: (context, _, __) => Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            // Free-style eraser
-            IconButton(
-              icon: Icon(
-                PhosphorIcons.eraser,
-                color: controller.freeStyleMode == FreeStyleMode.erase
-                    ? Theme.of(context).colorScheme.secondary
-                    : null,
-              ),
-              onPressed: toggleFreeStyleErase,
-            ),
-            // Free-style drawing
-            IconButton(
-              icon: Icon(
-                PhosphorIcons.scribble_loop,
-                color: controller.freeStyleMode == FreeStyleMode.draw
-                    ? Theme.of(context).colorScheme.secondary
-                    : null,
-              ),
-              onPressed: toggleFreeStyleDraw,
-            ),
-            // Add text
-            IconButton(
-              icon: Icon(
-                PhosphorIcons.text_h,
-                color: textFocusNode.hasFocus
-                    ? Theme.of(context).colorScheme.secondary
-                    : null,
-              ),
-              onPressed: addText,
-            ),
-            // Add sticker image
-            IconButton(
-              icon: const Icon(PhosphorIcons.sticker),
-              onPressed: addSticker,
-            ),
-            // Add shapes
-            if (controller.shapeFactory == null)
-              PopupMenuButton<ShapeFactory?>(
-                tooltip: "Add shape",
-                itemBuilder: (context) =>
-                    <ShapeFactory, String>{
-                          LineFactory(): "Line",
-                          ArrowFactory(): "Arrow",
-                          DoubleArrowFactory(): "Double Arrow",
-                          RectangleFactory(): "Rectangle",
-                          OvalFactory(): "Oval",
-                        }.entries
-                        .map(
-                          (e) => PopupMenuItem(
-                            value: e.key,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Icon(getShapeIcon(e.key), color: Colors.black),
-                                Text(" ${e.value}"),
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-                onSelected: selectShape,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Icon(
-                    getShapeIcon(controller.shapeFactory),
-                    color: controller.shapeFactory != null
+        builder: (context, _, __) => Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: Wrap(
+              alignment: WrapAlignment.spaceAround,
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                // Free-style group (draw / erase)
+                PopupMenuButton<String>(
+                  tooltip: 'Free-style tools',
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'draw', child: Text('Draw')),
+                    const PopupMenuItem(value: 'erase', child: Text('Erase')),
+                  ],
+                  onSelected: (v) {
+                    if (v == 'draw') toggleFreeStyleDraw();
+                    if (v == 'erase') toggleFreeStyleErase();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Icon(
+                      PhosphorIcons.scribble_loop,
+                      color: controller.freeStyleMode == FreeStyleMode.draw
+                          ? Theme.of(context).colorScheme.secondary
+                          : (controller.freeStyleMode == FreeStyleMode.erase
+                              ? Theme.of(context).colorScheme.secondary
+                              : null),
+                    ),
+                  ),
+                ),
+
+                // Text tool
+                IconButton(
+                  icon: Icon(
+                    PhosphorIcons.text_h,
+                    color: textFocusNode.hasFocus
                         ? Theme.of(context).colorScheme.secondary
                         : null,
                   ),
+                  onPressed: addText,
                 ),
-              )
-            else
-              IconButton(
-                icon: Icon(
-                  getShapeIcon(controller.shapeFactory),
-                  color: Theme.of(context).colorScheme.secondary,
+
+                // Sticker / Image
+                IconButton(
+                  icon: const Icon(PhosphorIcons.sticker),
+                  onPressed: addSticker,
                 ),
-                onPressed: () => selectShape(null),
-              ),
-          ],
+
+                // Shape factory - keep existing grouped popup (unchanged)
+                if (controller.shapeFactory == null)
+                  PopupMenuButton<ShapeFactory?>(
+                    tooltip: "Add shape",
+                    itemBuilder: (context) =>
+                        <ShapeFactory, String>{
+                              LineFactory(): "Line",
+                              ArrowFactory(): "Arrow",
+                              DoubleArrowFactory(): "Double Arrow",
+                              RectangleFactory(): "Rectangle",
+                              OvalFactory(): "Oval",
+                            }.entries
+                            .map(
+                              (e) => PopupMenuItem(
+                                value: e.key,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  children: [
+                                    Icon(getShapeIcon(e.key), color: Colors.black),
+                                    Text(" ${e.value}"),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                    onSelected: selectShape,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Icon(
+                        getShapeIcon(controller.shapeFactory),
+                        color: controller.shapeFactory != null
+                            ? Theme.of(context).colorScheme.secondary
+                            : null,
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: Icon(
+                      getShapeIcon(controller.shapeFactory),
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                    onPressed: () => selectShape(null),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

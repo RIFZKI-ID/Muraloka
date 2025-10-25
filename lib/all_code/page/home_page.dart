@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-// Ganti dengan ArtItem jika art_data.dart berisi model
-import 'package:muraloka/all_code/model/art_data.dart';
+import 'package:provider/provider.dart';
 import 'package:muraloka/all_code/model/project.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_cubit.dart';
 import 'package:muraloka/all_code/state/home_cubit/home_state.dart';
+import 'package:muraloka/all_code/providers/theme_provider.dart';
 import 'package:muraloka/constant/constant.dart';
 import 'package:muraloka/constant/name_router.dart'; // Digunakan untuk navigasi
 
@@ -16,10 +16,14 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ThemeManager.of(context);
     final cubit = context.read<HomeCubit>();
+    final themeProvider = context.watch<ThemeProvider>();
 
-    // Warna eksplisit untuk kontras Body:
+    // Warna dinamis berdasarkan dark mode
     const Color appBarContentColor = Colors.white;
-    const Color bodyContentColor = Colors.black;
+    final bool isDark = themeProvider.isDarkMode;
+    final Color bodyContentColor = isDark ? Colors.white : Colors.black;
+    final Color cardBackgroundColor = isDark ? Colors.grey[850]! : Colors.white;
+    final Color subtitleColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
 
     // Panggil fetchData hanya sekali saat build pertama (atau HomeInitial)
     if (cubit.state is HomeInitial) {
@@ -27,8 +31,8 @@ class HomePage extends StatelessWidget {
     }
 
     return Scaffold(
-      // --- PERUBAHAN UTAMA DI SINI: BODY BACKGROUND PUTIH ---
-      backgroundColor: Colors.white,
+      // Dark mode aware background
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       // --- PERUBAHAN UTAMA DI SINI: APPBAR WARNA SECONDARY1 ---
       appBar: AppBar(
         backgroundColor: theme.secondary1,
@@ -47,6 +51,17 @@ class HomePage extends StatelessWidget {
           ),
         ),
         actions: [
+          // Dark Mode Toggle
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, _) => IconButton(
+              icon: Icon(
+                themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                color: appBarContentColor,
+              ),
+              tooltip: themeProvider.isDarkMode ? 'Light Mode' : 'Dark Mode',
+              onPressed: () => themeProvider.toggleTheme(),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.search, color: appBarContentColor),
             onPressed: () {
@@ -69,43 +84,94 @@ class HomePage extends StatelessWidget {
             return Center(
               child: Text(
                 'Error: ${state.message}',
-                style: const TextStyle(color: bodyContentColor),
+                style: TextStyle(color: bodyContentColor),
               ),
             );
           }
 
           if (state is HomeLoaded) {
+            // Check if all data is empty
+            final hasResumeProjects = state.resumeProjects.isNotEmpty;
+            final hasPopularProjects = state.popularProjects.isNotEmpty;
+            final hasAnyData = hasResumeProjects || hasPopularProjects;
+            
+            if (!hasAnyData) {
+              // Show empty state
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.art_track,
+                      size: 80,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Welcome to Muraloka!',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: bodyContentColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Start creating your first artwork',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: subtitleColor,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => context.go('/projects'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create New Project'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.primary1,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+            
             return SingleChildScrollView(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Resume your art
-                  _buildSection(
-                    context,
-                    title: 'Resume your art',
-                    items: state.resumeProjects,
-                    theme: theme,
-                    bodyTextColor: bodyContentColor, // Teks body hitam
-                  ),
-                  SizedBox(height: 8),
-                  // 2. Popular Art
-                  _buildSection(
-                    context,
-                    title: 'Popular Art',
-                    items: state.popularProjects,
-                    theme: theme,
-                    bodyTextColor: bodyContentColor, // Teks body hitam
-                  ),
-                  // 3. Popular Author
-                  // _buildSection(
-                  //   context,
-                  //   title: 'Popular Author',
-                  //   items: state.popularAuthors,
-                  //   theme: theme,
-                  //   bodyTextColor: bodyContentColor, // Teks body hitam
-                  //   isAuthor: true,
-                  // ),
+                  // 1. Resume your art - only show if has data
+                  if (hasResumeProjects)
+                    _buildSection(
+                      context,
+                      title: 'Resume your art',
+                      items: state.resumeProjects,
+                      theme: theme,
+                      bodyTextColor: bodyContentColor,
+                      cardBackgroundColor: cardBackgroundColor,
+                      subtitleColor: subtitleColor,
+                    ),
+                  if (hasResumeProjects) SizedBox(height: 8),
+                  
+                  // 2. Popular Art - only show if has data
+                  if (hasPopularProjects)
+                    _buildSection(
+                      context,
+                      title: 'Popular Art',
+                      items: state.popularProjects,
+                      theme: theme,
+                      bodyTextColor: bodyContentColor,
+                      cardBackgroundColor: cardBackgroundColor,
+                      subtitleColor: subtitleColor,
+                    ),
+                  
                   const SizedBox(height: 20),
                 ],
               ),
@@ -145,18 +211,46 @@ class HomePage extends StatelessWidget {
             onTap: () => context.goNamed(HOME_PAGE_ROUTE),
             textColor: Colors.white,
           ),
+          // Canvas menu - commented out (akses melalui My Projects)
+          // _drawerItem(
+          //   icon: Icons.format_paint,
+          //   text: 'Canvas',
+          //   onTap: () {
+          //     Navigator.pop(context);
+          //     context.go('/paint');
+          //   },
+          //   textColor: Colors.white,
+          // ),
           _drawerItem(
-            icon: Icons.format_paint,
-            text: 'Canvas',
+            icon: Icons.folder_open,
+            text: 'My Projects',
             onTap: () {
               Navigator.pop(context);
-              context.go('/paint');
+              context.go('/projects');
+            },
+            textColor: Colors.white,
+          ),
+          _drawerItem(
+            icon: Icons.collections,
+            text: 'My Artworks',
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/my-artworks');
+            },
+            textColor: Colors.white,
+          ),
+          _drawerItem(
+            icon: Icons.storefront,
+            text: 'Marketplace',
+            onTap: () {
+              Navigator.pop(context);
+              context.go('/marketplace');
             },
             textColor: Colors.white,
           ),
           _drawerItem(
             icon: Icons.person,
-            text: 'Profil',
+            text: 'Profile',
             onTap: () => context.go('/profile'),
             textColor: Colors.white,
           ),
@@ -193,15 +287,20 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  // Widget _buildSection dan _buildCardItem menggunakan bodyTextColor (hitam)
+  // Widget _buildSection dan _buildCardItem menggunakan bodyTextColor dinamis
   Widget _buildSection(
     BuildContext context, {
     required String title,
     required List<Project> items,
     required ThemeManager theme,
-    required Color bodyTextColor, // bodyTextColor = Colors.black
+    required Color bodyTextColor,
+    required Color cardBackgroundColor,
+    required Color subtitleColor,
     bool isAuthor = false,
   }) {
+    // Don't render if no items
+    if (items.isEmpty) return const SizedBox.shrink();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -240,6 +339,8 @@ class HomePage extends StatelessWidget {
                 item: items[index],
                 theme: theme,
                 bodyTextColor: bodyTextColor,
+                cardBackgroundColor: cardBackgroundColor,
+                subtitleColor: subtitleColor,
                 isAuthor: isAuthor,
               );
             },
@@ -249,12 +350,14 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  // Widget _buildCardItem menggunakan bodyTextColor (hitam)
+  // Widget _buildCardItem dengan dark mode support
   Widget _buildCardItem(
     BuildContext context, {
     required Project item,
     required ThemeManager theme,
     required Color bodyTextColor,
+    required Color cardBackgroundColor,
+    required Color subtitleColor,
     bool isAuthor = false,
   }) {
     return SizedBox(
@@ -265,7 +368,7 @@ class HomePage extends StatelessWidget {
           borderRadius: BorderRadius.circular(16.0),
         ),
         elevation: 2.0,
-        color: Colors.white,
+        color: cardBackgroundColor, // Dynamic background color
         margin: const EdgeInsets.only(right: 12.0),
         child: Padding(
           padding: const EdgeInsets.all(8.0), // Padding di dalam Card
@@ -279,7 +382,7 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8.0),
                     child: Image.network(
                       // item.imageUrl,
-                      item.projectId,
+                      item.id,
                       fit: BoxFit.cover,
                       height: isAuthor ? 120 : 160,
                       width: double.infinity,
@@ -323,7 +426,7 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 8),
               // Bagian Teks
               Text(
-                item.title,
+                item.name,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
@@ -335,8 +438,8 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 // item.subtitle,
-                item.title,
-                style: TextStyle(fontSize: 12, color: bodyTextColor),
+                item.name,
+                style: TextStyle(fontSize: 12, color: subtitleColor), // Dynamic subtitle color
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

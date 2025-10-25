@@ -21,7 +21,7 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map((doc) {
-            return Project.fromMap(doc.data()).copyWith(id: doc.id);
+            return Project.fromMap(doc.data(), doc.id);
           }).toList();
         });
   }

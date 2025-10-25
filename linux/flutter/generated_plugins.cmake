@@ -5,6 +5,8 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_webview_auth
   gtk
+  open_file_linux
+  url_launcher_linux
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
