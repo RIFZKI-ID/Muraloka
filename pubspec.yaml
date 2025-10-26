@@ -53,10 +53,16 @@ flutter:
       fonts:
         - asset: packages/firebase_ui_auth/fonts/SocialIcons.ttf
   
+  # Explicitly list all assets to ensure they're included in release builds
   assets:
     - assets/images/
+    - assets/images/logo_muraloka.png
+    - assets/images/barcode_pembayaran.jpeg
 
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/images/logo_muraloka.png"
+  # Android adaptive icon configuration
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo_muraloka.png"
