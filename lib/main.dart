@@ -1,5 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart'
-    hide PhoneAuthProvider, EmailAuthProvider;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:muraloka/constant/constant.dart';
 import 'package:provider/provider.dart';
 import 'package:muraloka/all_code/page/paint_page.dart';
+import 'package:muraloka/all_code/page/layer_paint_page.dart';
 import 'package:muraloka/all_code/page/my_artworks_page.dart';
 import 'package:muraloka/all_code/page/projects_gallery_page.dart';
 import 'package:muraloka/all_code/page/marketplace_page.dart';
@@ -23,6 +22,7 @@ import 'package:muraloka/firebase_options.dart';
 import 'package:muraloka/all_code/page/home_page.dart';
 import 'package:muraloka/all_code/page/setting_page.dart';
 import 'package:muraloka/all_code/services/user_profile_service.dart';
+import 'package:muraloka/presentation/pages/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,10 +42,12 @@ class MainApp extends StatelessWidget {
     final userProfileService = UserProfileService();
 
     final router = GoRouter(
-      initialLocation: FirebaseAuth.instance.currentUser == null
-          ? '/sign-in'
-          : '/home',
+      initialLocation: '/',
       routes: <RouteBase>[
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const SplashScreen(),
+        ),
         GoRoute(
           path: '/sign-in',
           builder: (context, state) => SignInScreen(
@@ -73,7 +75,26 @@ class MainApp extends StatelessWidget {
           path: '/home',
           builder: (context, state) => HomePage(),
         ),
-        GoRoute(path: '/paint', builder: (context, state) => PaintPage()),
+        GoRoute(
+          path: '/paint',
+          builder: (context, state) {
+            // Get parameters from extra
+            final extra = state.extra as Map<String, dynamic>?;
+            final projectId = extra?['projectId'] as String?;
+            final isShared = extra?['isShared'] as bool? ?? false;
+            
+            // If no projectId, go to demo page
+            if (projectId == null) {
+              return PaintPage();
+            }
+            
+            // Otherwise, open LayerPaintPage with project
+            return LayerPaintPage(
+              projectId: projectId,
+              isShared: isShared,
+            );
+          },
+        ),
         GoRoute(
           path: '/my-artworks',
           builder: (context, state) => MyArtworksPage(),
@@ -88,23 +109,48 @@ class MainApp extends StatelessWidget {
         ),
         GoRoute(
           path: '/profile',
-          builder: (context, state) => ProfileScreen(
-            appBar: AppBar(
-              backgroundColor: ThemeManager.of(context).secondary1,
-              title: const Text('Profil Pengguna'),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  context.go('/home');
-                },
+          builder: (context, state) {
+            final theme = ThemeManager.of(context);
+            
+            return Theme(
+              data: Theme.of(context).copyWith(
+                // Ensure text colors follow the theme
+                textTheme: Theme.of(context).textTheme.apply(
+                  bodyColor: theme.textPrimary,
+                  displayColor: theme.textPrimary,
+                ),
+                // Ensure ListTile text follows theme
+                listTileTheme: ListTileThemeData(
+                  textColor: theme.textPrimary,
+                  iconColor: theme.textSecondary,
+                ),
               ),
-
-              automaticallyImplyLeading: false,
-            ),
-            showDeleteConfirmationDialog: true,
-            showMFATile: true,
-            actions: [SignedOutAction((context) => context.go('/sign-in'))],
-          ),
+              child: ProfileScreen(
+                appBar: AppBar(
+                  backgroundColor: theme.primary,
+                  foregroundColor: theme.surface,
+                  elevation: 0,
+                  title: Text(
+                    'Profile Pengguna',
+                    style: TextStyle(
+                      color: theme.surface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  leading: IconButton(
+                    icon: Icon(Icons.arrow_back, color: theme.surface),
+                    onPressed: () {
+                      context.go('/home');
+                    },
+                  ),
+                  automaticallyImplyLeading: false,
+                ),
+                showDeleteConfirmationDialog: true,
+                showMFATile: true,
+                actions: [SignedOutAction((context) => context.go('/sign-in'))],
+              ),
+            );
+          },
         ),
         //#example if use parameter#
         // GoRoute(
@@ -136,7 +182,7 @@ class MainApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             theme: AppTheme.lightTheme.copyWith(
               textTheme: GoogleFonts.merriweatherTextTheme(
-                ThemeData(brightness: Brightness.dark).textTheme,
+                ThemeData(brightness: Brightness.light).textTheme,
               ),
               pageTransitionsTheme: const PageTransitionsTheme(
                 builders: {

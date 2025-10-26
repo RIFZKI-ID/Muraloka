@@ -104,8 +104,18 @@ class LayerRepository {
   // ==================== SHARED PROJECT LAYERS ====================
 
   /// Create layer in shared project
-  Future<String> createSharedLayer(String projectId, Layer layer) async {
-    final docRef = await _sharedLayersCollection(projectId).add(layer.toMap());
+  Future<String> createSharedLayer(
+    String projectId,
+    Layer layer, {
+    required String ownerId,
+    required List<String> collaboratorIds,
+  }) async {
+    final layerData = {
+      ...layer.toMap(),
+      'ownerId': ownerId,
+      'collaboratorIds': collaboratorIds,
+    };
+    final docRef = await _sharedLayersCollection(projectId).add(layerData);
     return docRef.id;
   }
 
@@ -250,6 +260,8 @@ class LayerRepository {
     String layerId, {
     bool isPrivate = false,
     String? userId,
+    String? ownerId,
+    List<String>? collaboratorIds,
   }) async {
     // Get original layer
     final Layer? originalLayer = isPrivate && userId != null
@@ -270,9 +282,21 @@ class LayerRepository {
     );
 
     // Create new layer
-    return isPrivate && userId != null
-        ? await createPrivateLayer(userId, projectId, copiedLayer)
-        : await createSharedLayer(projectId, copiedLayer);
+    if (isPrivate && userId != null) {
+      return await createPrivateLayer(userId, projectId, copiedLayer);
+    } else {
+      // For shared layers, require ownerId and collaboratorIds
+      if (ownerId == null || collaboratorIds == null) {
+        throw ArgumentError(
+            'ownerId and collaboratorIds are required for shared layers');
+      }
+      return await createSharedLayer(
+        projectId,
+        copiedLayer,
+        ownerId: ownerId,
+        collaboratorIds: collaboratorIds,
+      );
+    }
   }
 
   // ==================== OPTIMIZATION METHODS ====================

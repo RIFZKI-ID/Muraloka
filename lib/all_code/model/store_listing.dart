@@ -8,6 +8,7 @@ class StoreListing extends Equatable {
   final String title;
   final String projectId; // Reference ke project yang dijual
   final String ownerId; // Pemilik yang menjual
+  final String ownerName; // Nama creator/pemilik
   final double price;
   final String? description;
   final String? thumbnailBase64; // Thumbnail untuk preview
@@ -24,6 +25,7 @@ class StoreListing extends Equatable {
     required this.title,
     required this.projectId,
     required this.ownerId,
+    this.ownerName = 'Unknown Creator', // Default for backward compatibility, akan di-set saat create listing
     required this.price,
     this.description,
     this.thumbnailBase64,
@@ -49,6 +51,7 @@ class StoreListing extends Equatable {
       title: data['title'] as String? ?? '',
       projectId: data['projectId'] as String? ?? '',
       ownerId: data['ownerId'] as String? ?? '',
+      ownerName: data['ownerName'] as String? ?? 'Unknown Creator',
       price: (data['price'] as num?)?.toDouble() ?? 0.0,
       description: data['description'] as String?,
       thumbnailBase64: data['thumbnailBase64'] as String?,
@@ -69,6 +72,7 @@ class StoreListing extends Equatable {
       title: data['title'] as String? ?? '',
       projectId: data['projectId'] as String? ?? '',
       ownerId: data['ownerId'] as String? ?? '',
+      ownerName: data['ownerName'] as String? ?? 'Unknown Creator',
       price: (data['price'] as num?)?.toDouble() ?? 0.0,
       description: data['description'] as String?,
       thumbnailBase64: data['thumbnailBase64'] as String?,
@@ -88,6 +92,7 @@ class StoreListing extends Equatable {
       'title': title,
       'projectId': projectId,
       'ownerId': ownerId,
+      'ownerName': ownerName,
       'price': price,
       'description': description,
       'thumbnailBase64': thumbnailBase64,
@@ -107,6 +112,7 @@ class StoreListing extends Equatable {
     String? title,
     String? projectId,
     String? ownerId,
+    String? ownerName,
     double? price,
     String? description,
     String? thumbnailBase64,
@@ -123,6 +129,7 @@ class StoreListing extends Equatable {
       title: title ?? this.title,
       projectId: projectId ?? this.projectId,
       ownerId: ownerId ?? this.ownerId,
+      ownerName: ownerName ?? this.ownerName,
       price: price ?? this.price,
       description: description ?? this.description,
       thumbnailBase64: thumbnailBase64?? this.thumbnailBase64,
@@ -142,6 +149,7 @@ class StoreListing extends Equatable {
         title,
         projectId,
         ownerId,
+        ownerName,
         price,
         description,
         thumbnailBase64,

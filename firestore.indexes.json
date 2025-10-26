@@ -43,6 +43,20 @@
       ]
     },
     {
+      "collectionGroup": "store_listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "averageRating",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "projects_shared",
       "queryScope": "COLLECTION",
       "fields": [

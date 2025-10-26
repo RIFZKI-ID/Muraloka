@@ -14,16 +14,9 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
     final cubit = context.read<HomeCubit>();
-    final themeProvider = context.watch<ThemeProvider>();
-
-    // Warna dinamis berdasarkan dark mode
-    const Color appBarContentColor = Colors.white;
-    final bool isDark = themeProvider.isDarkMode;
-    final Color bodyContentColor = isDark ? Colors.white : Colors.black;
-    final Color cardBackgroundColor = isDark ? Colors.grey[850]! : Colors.white;
-    final Color subtitleColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
 
     // Panggil fetchData hanya sekali saat build pertama (atau HomeInitial)
     if (cubit.state is HomeInitial) {
@@ -32,21 +25,22 @@ class HomePage extends StatelessWidget {
 
     return Scaffold(
       // Dark mode aware background
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      // --- PERUBAHAN UTAMA DI SINI: APPBAR WARNA SECONDARY1 ---
+      backgroundColor: theme.background,
+      // AppBar dengan primary color (biru)
       appBar: AppBar(
-        backgroundColor: theme.secondary1,
+        backgroundColor: theme.primary,
+        foregroundColor: theme.surface,
         elevation: 0,
         leading: Builder(
           builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: appBarContentColor),
+            icon: Icon(Icons.menu, color: theme.surface),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text(
+        title: Text(
           'Muraloka',
           style: TextStyle(
-            color: appBarContentColor,
+            color: theme.surface,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -56,14 +50,14 @@ class HomePage extends StatelessWidget {
             builder: (context, themeProvider, _) => IconButton(
               icon: Icon(
                 themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-                color: appBarContentColor,
+                color: theme.surface,
               ),
               tooltip: themeProvider.isDarkMode ? 'Light Mode' : 'Dark Mode',
               onPressed: () => themeProvider.toggleTheme(),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.search, color: appBarContentColor),
+            icon: Icon(Icons.search, color: theme.surface),
             onPressed: () {
               // Aksi pencarian
             },
@@ -71,20 +65,20 @@ class HomePage extends StatelessWidget {
           const SizedBox(width: 8),
         ],
       ),
-      // Drawer tetap menggunakan warna theme.primary1
-      drawer: _buildDrawer(context, theme, appBarContentColor),
+      // Drawer tetap menggunakan warna primary
+      drawer: _buildDrawer(context, theme),
       body: BlocBuilder<HomeCubit, HomeState>(
         builder: (context, state) {
           if (state is HomeLoading || state is HomeInitial) {
             return Center(
-              child: CircularProgressIndicator(color: theme.primary1),
+              child: CircularProgressIndicator(color: theme.primary),
             );
           }
           if (state is HomeFailure) {
             return Center(
               child: Text(
                 'Error: ${state.message}',
-                style: TextStyle(color: bodyContentColor),
+                style: TextStyle(color: theme.textPrimary),
               ),
             );
           }
@@ -104,7 +98,7 @@ class HomePage extends StatelessWidget {
                     Icon(
                       Icons.art_track,
                       size: 80,
-                      color: Colors.grey.shade400,
+                      color: theme.textSecondary,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -112,22 +106,25 @@ class HomePage extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: bodyContentColor,
+                        color: theme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Start creating your first artwork',
-                      style: TextStyle(fontSize: 16, color: subtitleColor),
+                      style: TextStyle(fontSize: 16, color: theme.textSecondary),
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () => context.go('/projects'),
                       icon: const Icon(Icons.add),
-                      label: const Text('Create New Project'),
+                      label: Text(
+                        'Create New Project',
+                        style: TextStyle(color: theme.surface),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.primary1,
-                        foregroundColor: Colors.white,
+                        backgroundColor: theme.primary,
+                        foregroundColor: theme.surface,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,
@@ -151,9 +148,9 @@ class HomePage extends StatelessWidget {
                       title: 'Resume your art',
                       items: state.resumeProjects,
                       theme: theme,
-                      bodyTextColor: bodyContentColor,
-                      cardBackgroundColor: cardBackgroundColor,
-                      subtitleColor: subtitleColor,
+                      bodyTextColor: theme.textPrimary,
+                      cardBackgroundColor: theme.surface,
+                      subtitleColor: theme.textSecondary,
                     ),
                   if (hasResumeProjects) SizedBox(height: 8),
 
@@ -164,9 +161,9 @@ class HomePage extends StatelessWidget {
                       title: 'Popular Art',
                       items: state.popularProjects,
                       theme: theme,
-                      bodyTextColor: bodyContentColor,
-                      cardBackgroundColor: cardBackgroundColor,
-                      subtitleColor: subtitleColor,
+                      bodyTextColor: theme.textPrimary,
+                      cardBackgroundColor: theme.surface,
+                      subtitleColor: theme.textSecondary,
                     ),
 
                   const SizedBox(height: 20),
@@ -180,24 +177,22 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  // Widget _buildDrawer tetap menggunakan warna theme.primary1 dengan konten putih
+  // Widget _buildDrawer dengan primary color
   Widget _buildDrawer(
     BuildContext context,
     ThemeManager theme,
-    Color drawerContentColor,
   ) {
-    final themeNew = ThemeManager.of(context);
     return Drawer(
-       backgroundColor: themeNew.secondary1, // Menggunakan primary1 untuk Drawer
+       backgroundColor: theme.primary, // Menggunakan primary untuk Drawer
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           DrawerHeader(
-            decoration: BoxDecoration(color: themeNew.secondary1),
+            decoration: BoxDecoration(color: theme.primary),
             child: Text(
               'Muraloka',
               style: TextStyle(
-                color: theme.tertiary1,
+                color: theme.surface,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -207,18 +202,8 @@ class HomePage extends StatelessWidget {
             icon: Icons.home,
             text: 'Beranda',
             onTap: () => context.goNamed(HOME_PAGE_ROUTE),
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
-          // Canvas menu - commented out (akses melalui My Projects)
-          // _drawerItem(
-          //   icon: Icons.format_paint,
-          //   text: 'Canvas',
-          //   onTap: () {
-          //     Navigator.pop(context);
-          //     context.go('/paint');
-          //   },
-          //   textColor: Colors.white,
-          // ),
           _drawerItem(
             icon: Icons.folder_open,
             text: 'My Projects',
@@ -226,7 +211,7 @@ class HomePage extends StatelessWidget {
               Navigator.pop(context);
               context.go('/projects');
             },
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
           _drawerItem(
             icon: Icons.collections,
@@ -235,7 +220,7 @@ class HomePage extends StatelessWidget {
               Navigator.pop(context);
               context.go('/my-artworks');
             },
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
           _drawerItem(
             icon: Icons.storefront,
@@ -244,19 +229,19 @@ class HomePage extends StatelessWidget {
               Navigator.pop(context);
               context.go('/marketplace');
             },
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
           _drawerItem(
             icon: Icons.person,
             text: 'Profile',
             onTap: () => context.go('/profile'),
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
           _drawerItem(
             icon: Icons.settings,
             text: 'Pengaturan',
             onTap: () => context.goNamed(SETTING_PAGE_ROUTE),
-            textColor: Colors.white,
+            textColor: theme.surface,
           ),
         ],
       ),
@@ -377,35 +362,35 @@ class HomePage extends StatelessWidget {
                       width: double.infinity,
                       errorBuilder: (context, error, stackTrace) => Container(
                         height: isAuthor ? 120 : 160,
-                        color: Colors.grey,
+                        color: subtitleColor,
                         child: Center(
                           child: Text(
                             isAuthor ? 'Author' : 'Art',
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: cardBackgroundColor),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  // Ikon Hati/Like (Kanan Atas dengan Latar Belakang Hitam)
+                  // Ikon Hati/Like (Kanan Atas dengan Latar Belakang Semi-Transparan)
                   Positioned(
                     top: 8,
                     right: 8,
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: Colors.black, // Latar belakang hitam
+                        color: AppColors.semiBlack, // Latar belakang semi-transparan
                         borderRadius: BorderRadius.circular(50),
                       ),
                       child:
                           // Icon(
                           //   item.isLiked ? Icons.favorite : Icons.favorite_border,
-                          //   color: Colors.white, // Ikon selalu putih
+                          //   color: cardBackgroundColor, // Ikon mengikuti theme
                           //   size: 16,
                           // ),
                           Icon(
                             Icons.favorite_border,
-                            color: Colors.white, // Ikon selalu putih
+                            color: cardBackgroundColor, // Ikon mengikuti theme
                             size: 16,
                           ),
                     ),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:muraloka/all_code/data_api/canvas_artwork_repository.dart';
@@ -50,10 +51,14 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
+    
     return Scaffold(
+      backgroundColor: theme.background,
       appBar: AppBar(
-        backgroundColor: theme.secondary1,
+        backgroundColor: theme.primary,
+        foregroundColor: theme.surface,
         title: const Text('My Artworks'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -73,9 +78,9 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
             Tab(icon: Icon(Icons.folder), text: 'Projects'),
             Tab(icon: Icon(Icons.store), text: 'Marketplace'),
           ],
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
+          labelColor: theme.surface,
+          unselectedLabelColor: theme.surface.withOpacity(0.7),
+          indicatorColor: theme.surface,
           indicatorWeight: 3.0,
         ),
       ),
@@ -103,14 +108,23 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
             builder: (context, listingSnapshot) {
               if (projectSnapshot.connectionState == ConnectionState.waiting ||
                   listingSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
+                final theme = ThemeManager.of(context);
+                return Center(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Loading artworks...'),
-                    ],
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(theme.primary),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                    'Loading artworks...',
+                    style: TextStyle(
+                      color: theme.textPrimary,
+                      fontSize: 16,
+                    ),
+                    ),
+                  ],
                   ),
                 );
               }
@@ -259,27 +273,37 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
     final privateStream = _projectRepo.streamPrivateProjects(currentUserId);
     final collaborativeStream = _projectRepo.streamCollaborativeProjects(currentUserId);
 
-    return privateStream.asyncExpand((privateProjects) async* {
-      await for (final sharedProjects in collaborativeStream) {
-        // Combine and deduplicate by ID
-        final combined = <String, mvp.Project>{};
-        for (final project in privateProjects) {
-          combined[project.id] = project;
-        }
-        for (final project in sharedProjects) {
-          combined[project.id] = project;
-        }
-        
-        // Sort by updatedAt descending
-        final sorted = combined.values.toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        
-        yield sorted;
+    // Use StreamZip to combine both streams safely
+    return privateStream.asyncMap((privateProjects) async {
+      // Get current collaborative projects snapshot
+      final sharedProjects = await collaborativeStream.first;
+      
+      // Combine and deduplicate by ID
+      final combined = <String, mvp.Project>{};
+      for (final project in privateProjects) {
+        combined[project.id] = project;
       }
+      for (final project in sharedProjects) {
+        combined[project.id] = project;
+      }
+      
+      // Filter out projects with room code (they should only appear in My Projects)
+      final filtered = combined.values
+        .where((project) => project.roomCode == null || project.roomCode!.isEmpty)
+        .toList();
+      
+      // Sort by updatedAt descending
+      final sorted = filtered
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      
+      return sorted;
     });
   }
 
   Widget _buildEmptyView({String? message, IconData? icon}) {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return ListView(
       children: [
         SizedBox(
@@ -288,16 +312,20 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon ?? Icons.art_track, size: 80, color: Colors.grey[400]),
+                Icon(
+                  icon ?? Icons.art_track,
+                  size: 80,
+                  color: theme.primary.withOpacity(0.3),
+                ),
                 const SizedBox(height: 24),
                 Text(
                   message ?? 'No artworks yet',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Create your first canvas masterpiece!',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  style: TextStyle(color: theme.textSecondary, fontSize: 16),
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
@@ -314,6 +342,9 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
   }
 
   Widget _buildErrorView(Object? error) {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return ListView(
       children: [
         SizedBox(
@@ -324,17 +355,21 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: theme.error,
+                  ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Failed to load artworks',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '$error',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey[600]),
+                    style: TextStyle(color: theme.textSecondary, fontSize: 16),
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
@@ -352,6 +387,37 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
   }
 
   void _openProject(mvp.Project project) {
+    // 🔒 SECURITY: Projects with room code must be accessed via "Join Collaboration"
+    if (project.roomCode != null && project.roomCode!.isNotEmpty) {
+      final theme = ThemeManager.of(context);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.lock, color: theme.surface),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'This project is in collaboration mode. Please use "Join Collaboration" with room code: ${project.roomCode}',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: theme.warning,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Copy Code',
+            textColor: theme.surface,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: project.roomCode!));
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    
     context.push(
       '/paint',
       extra: {
@@ -374,7 +440,7 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -396,7 +462,7 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Project deleted successfully'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.success,
             ),
           );
         }
@@ -404,8 +470,8 @@ class _MyArtworksPageState extends State<MyArtworksPage> with SingleTickerProvid
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete: $e'),
-              backgroundColor: Colors.red,
+              content: Text('Failed to delete project: $e'),
+              backgroundColor: AppColors.error,
             ),
           );
         }
@@ -475,24 +541,35 @@ class ProjectCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: thumbnailBytes != null
-                  ? Image.memory(
-                      thumbnailBytes,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
+        child: Builder(
+          builder: (context) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: thumbnailBytes != null
+                      ? Image.memory(
+                          thumbnailBytes,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
+                            return Container(
+                              color: placeholderColor,
+                              child: const Icon(Icons.broken_image, size: 48),
+                            );
+                          },
+                        )
+                  : Builder(
+                      builder: (context) {
+                        final isDark = Theme.of(context).brightness == Brightness.dark;
+                        final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
                         return Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.broken_image, size: 48),
+                          color: placeholderColor,
+                          child: const Icon(Icons.image, size: 48),
                         );
                       },
-                    )
-                  : Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image, size: 48),
                     ),
             ),
             Padding(
@@ -504,16 +581,17 @@ class ProjectCard extends StatelessWidget {
                     children: [
                       Icon(
                         project.isPublic ? Icons.public : Icons.lock,
-                        size: 12,
-                        color: Colors.grey[600],
+                        size: 14,
+                        color: isDark ? AppColors.darkAccent : AppColors.primary1,
                       ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           project.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                          style: TextStyle(
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -524,11 +602,17 @@ class ProjectCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '${project.canvasWidth}x${project.canvasHeight}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style: TextStyle(
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                   Text(
                     _formatDate(project.updatedAt),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style: TextStyle(
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -539,7 +623,7 @@ class ProjectCard extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.delete, size: 18),
                   onPressed: onDelete,
-                  color: Colors.red,
+                  color: AppColors.error,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -547,6 +631,8 @@ class ProjectCard extends StatelessWidget {
               ],
             ),
           ],
+            );
+          },
         ),
       ),
     );
@@ -595,7 +681,11 @@ class MarketplaceCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
+        child: Builder(
+          builder: (context) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            
+            return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
@@ -607,33 +697,48 @@ class MarketplaceCard extends StatelessWidget {
                           thumbnailBytes,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
+                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                            final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
                             return Container(
-                              color: Colors.grey[300],
+                              color: placeholderColor,
                               child: const Icon(Icons.broken_image, size: 48),
                             );
                           },
                         )
-                      : Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.store, size: 48),
+                      : Builder(
+                          builder: (context) {
+                            final isDark = Theme.of(context).brightness == Brightness.dark;
+                            final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
+                            return Container(
+                              color: placeholderColor,
+                              child: const Icon(Icons.store, size: 48),
+                            );
+                          },
                         ),
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Rp ${listing.price.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        final isDark = Theme.of(context).brightness == Brightness.dark;
+                        final successColor = isDark ? AppColors.darkSuccess : AppColors.success;
+                        final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: successColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Rp ${listing.price.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              color: surfaceColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -646,14 +751,19 @@ class MarketplaceCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.store, size: 12, color: Colors.orange),
+                      Icon(
+                        Icons.store,
+                        size: 12,
+                        color: isDark ? AppColors.darkAccent : AppColors.primary1,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           listing.title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                          style: TextStyle(
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -664,12 +774,17 @@ class MarketplaceCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     listing.tags.isEmpty ? 'Artwork' : listing.tags.first,
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style: TextStyle(
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
             ),
           ],
+            );
+          },
         ),
       ),
     );
@@ -701,65 +816,73 @@ class ArtworkCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: imageBytes != null
-                  ? Image.memory(
-                      imageBytes,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.broken_image, size: 48),
-                        );
-                      },
-                    )
-                  : Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image, size: 48),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    artwork.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatDate(artwork.createdAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+        child: Builder(
+          builder: (context) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20),
-                  onPressed: onDelete,
-                  color: Colors.red,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                Expanded(
+                  child: imageBytes != null
+                      ? Image.memory(
+                          imageBytes,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
+                            return Container(
+                              color: placeholderColor,
+                              child: const Icon(Icons.broken_image, size: 48),
+                            );
+                          },
+                        )
+                      : Container(
+                          color: isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant,
+                          child: const Icon(Icons.image, size: 48),
+                        ),
                 ),
-                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        artwork.title,
+                        style: TextStyle(
+                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatDate(artwork.createdAt),
+                        style: TextStyle(
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 20),
+                      onPressed: onDelete,
+                      color: AppColors.error,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -847,12 +970,18 @@ class _ArtworkDetailDialogState extends State<ArtworkDetailDialog> {
                 child: Image.memory(imageBytes),
               )
             else
-              Container(
-                height: 200,
-                color: Colors.grey[300],
-                child: const Center(
-                  child: Icon(Icons.broken_image, size: 48),
-                ),
+              Builder(
+                builder: (context) {
+                  final isDark = Theme.of(context).brightness == Brightness.dark;
+                  final placeholderColor = isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant;
+                  return Container(
+                    height: 200,
+                    color: placeholderColor,
+                    child: const Center(
+                      child: Icon(Icons.broken_image, size: 48),
+                    ),
+                  );
+                },
               ),
             const SizedBox(height: 16),
             _buildInfoRow('Created', _formatDateTime(widget.artwork.createdAt)),
@@ -917,7 +1046,7 @@ class _ArtworkDetailDialogState extends State<ArtworkDetailDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Title cannot be empty'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
       return;
@@ -930,14 +1059,14 @@ class _ArtworkDetailDialogState extends State<ArtworkDetailDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Title updated successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to update title'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }

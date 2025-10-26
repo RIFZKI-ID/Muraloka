@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_phosphor_icons/flutter_phosphor_icons.dart';
+import '../../constant/constant.dart';
 
 /// Custom loading indicator with brand colors
 class CustomLoadingIndicator extends StatelessWidget {
@@ -14,6 +15,9 @@ class CustomLoadingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -23,16 +27,14 @@ class CustomLoadingIndicator extends StatelessWidget {
             height: size,
             child: CircularProgressIndicator(
               strokeWidth: 3,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).colorScheme.primary,
-              ),
+              valueColor: AlwaysStoppedAnimation<Color>(theme.primary),
             ),
           ),
           if (message != null) ...[
             const SizedBox(height: 16),
             Text(
               message!,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: TextStyle(color: theme.textPrimary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -55,13 +57,14 @@ class SkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
     
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: isDark ? Colors.grey[800] : Colors.grey[200],
+        color: theme.surfaceVariant,
         borderRadius: BorderRadius.circular(12),
       ),
       child: AnimatedOpacity(
@@ -69,7 +72,7 @@ class SkeletonCard extends StatelessWidget {
         duration: const Duration(milliseconds: 500),
         child: Container(
           decoration: BoxDecoration(
-            color: isDark ? Colors.grey[700] : Colors.grey[300],
+            color: theme.border,
             borderRadius: BorderRadius.circular(12),
           ),
         ),
@@ -95,6 +98,9 @@ class EmptyStateWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -104,23 +110,26 @@ class EmptyStateWidget extends StatelessWidget {
             Icon(
               icon,
               size: 80,
-              color: Colors.grey[400],
+              color: theme.textSecondary,
             ),
             const SizedBox(height: 24),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: theme.textPrimary,
+              ),
               textAlign: TextAlign.center,
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 8),
               Text(
                 subtitle!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.textSecondary,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -148,6 +157,9 @@ class ErrorStateWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -157,22 +169,25 @@ class ErrorStateWidget extends StatelessWidget {
             Icon(
               PhosphorIcons.warning_circle,
               size: 80,
-              color: Theme.of(context).colorScheme.error,
+              color: theme.error,
             ),
             const SizedBox(height: 24),
             Text(
               'Oops! Something went wrong',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: theme.textPrimary,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
@@ -181,6 +196,10 @@ class ErrorStateWidget extends StatelessWidget {
                 onPressed: onRetry,
                 icon: const Icon(PhosphorIcons.arrow_clockwise),
                 label: const Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.primary,
+                  foregroundColor: theme.surface,
+                ),
               ),
             ],
           ],
@@ -196,12 +215,12 @@ void showSuccessSnackbar(BuildContext context, String message) {
     SnackBar(
       content: Row(
         children: [
-          const Icon(PhosphorIcons.check_circle, color: Colors.white),
+          const Icon(PhosphorIcons.check_circle, color: AppColors.lightSurface),
           const SizedBox(width: 12),
           Expanded(child: Text(message)),
         ],
       ),
-      backgroundColor: Colors.green,
+      backgroundColor: AppColors.success,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -214,12 +233,12 @@ void showErrorSnackbar(BuildContext context, String message) {
     SnackBar(
       content: Row(
         children: [
-          const Icon(PhosphorIcons.warning_circle, color: Colors.white),
+          const Icon(PhosphorIcons.warning_circle, color: AppColors.lightSurface),
           const SizedBox(width: 12),
           Expanded(child: Text(message)),
         ],
       ),
-      backgroundColor: Colors.red,
+      backgroundColor: AppColors.error,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -232,12 +251,12 @@ void showInfoSnackbar(BuildContext context, String message) {
     SnackBar(
       content: Row(
         children: [
-          const Icon(PhosphorIcons.info, color: Colors.white),
+          const Icon(PhosphorIcons.info, color: AppColors.lightSurface),
           const SizedBox(width: 12),
           Expanded(child: Text(message)),
         ],
       ),
-      backgroundColor: Colors.blue,
+      backgroundColor: AppColors.info,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -267,8 +286,8 @@ Future<bool> showConfirmationDialog(
           onPressed: () => Navigator.pop(context, true),
           style: isDangerous
               ? ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.error,
+                  foregroundColor: AppColors.lightSurface,
                 )
               : null,
           child: Text(confirmText),

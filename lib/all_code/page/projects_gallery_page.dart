@@ -70,11 +70,17 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
     String selectedPreset = canvasSizePresets[4]['name']; // Default: Full HD
     bool isCustomSize = false;
 
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Create New Project'),
+          title: Text(
+            'Create New Project',
+            style: TextStyle(color: theme.textPrimary),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -89,9 +95,13 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Canvas Size',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: theme.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -107,7 +117,10 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                     items: canvasSizePresets.map((preset) {
                       return DropdownMenuItem<String>(
                         value: preset['name'],
-                        child: Text(preset['name']),
+                        child: Text(
+                          preset['name'],
+                          style: TextStyle(color: theme.textPrimary),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -156,20 +169,20 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: theme.surfaceVariant,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.aspect_ratio, color: Colors.blue),
+                        Icon(Icons.aspect_ratio, color: theme.primary),
                         const SizedBox(width: 8),
                         Text(
                           '${widthController.text} × ${heightController.text} px',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                            color: theme.primary,
                           ),
                         ),
                       ],
@@ -181,7 +194,10 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: theme.textSecondary),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
@@ -237,10 +253,16 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
     final nameController = TextEditingController(text: project.name);
 
+    // Theme-aware colors
+    final theme = ThemeManager.of(context);
+
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Project'),
+        title: Text(
+          'Rename Project',
+          style: TextStyle(color: theme.textPrimary),
+        ),
         content: TextField(
           controller: nameController,
           decoration: const InputDecoration(
@@ -253,7 +275,10 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: theme.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -426,23 +451,29 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
   }
 
   Widget _buildInfoChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.grey[700]),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+    return Builder(
+      builder: (context) {
+        final theme = ThemeManager.of(context);
+        
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.surfaceVariant,
+            borderRadius: BorderRadius.circular(20),
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: theme.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(fontSize: 12, color: theme.textSecondary),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -555,22 +586,86 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('Sharing to marketplace...'),
-            ],
-          ),
-        ),
+        builder: (context) {
+          final theme = ThemeManager.of(context);
+          
+          return AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Text(
+                  'Sharing to marketplace...',
+                  style: TextStyle(color: theme.textPrimary),
+                ),
+              ],
+            ),
+          );
+        },
       );
+
+      // Get owner display name with priority: Firestore > FirebaseAuth > Email > Fallback
+      final currentUser = FirebaseAuth.instance.currentUser;
+      String ownerName = 'Unknown Creator'; // Final fallback
+      
+      print('🔍 Fetching owner name for userId: $currentUserId');
+      
+      // Try to get from Firestore first (most reliable)
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('artifacts')
+            .doc(appId)
+            .collection('users')
+            .doc(currentUserId)
+            .get();
+        
+        print('📄 Firestore user doc exists: ${userDoc.exists}');
+        
+        if (userDoc.exists) {
+          final data = userDoc.data();
+          print('📦 Firestore user data: $data');
+          
+          if (data != null) {
+            if (data['displayName'] != null && (data['displayName'] as String).isNotEmpty) {
+              ownerName = data['displayName'] as String;
+              print('✅ Got displayName from Firestore: "$ownerName"');
+            } else if (data['name'] != null && (data['name'] as String).isNotEmpty) {
+              // Try 'name' field as alternative
+              ownerName = data['name'] as String;
+              print('✅ Got name from Firestore: "$ownerName"');
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Failed to fetch from Firestore: $e');
+      }
+      
+      // If still Unknown Creator, try FirebaseAuth
+      if (ownerName == 'Unknown Creator' && currentUser != null) {
+        print('🔍 Firestore didn\'t provide name, trying FirebaseAuth...');
+        print('👤 FirebaseAuth displayName: "${currentUser.displayName}"');
+        print('📧 FirebaseAuth email: "${currentUser.email}"');
+        
+        if (currentUser.displayName != null && currentUser.displayName!.trim().isNotEmpty) {
+          ownerName = currentUser.displayName!.trim();
+          print('✅ Got displayName from FirebaseAuth: "$ownerName"');
+        } else if (currentUser.email != null) {
+          // Extract username from email (before @)
+          final emailUsername = currentUser.email!.split('@')[0];
+          // Capitalize first letter
+          ownerName = emailUsername[0].toUpperCase() + emailUsername.substring(1);
+          print('✅ Extracted name from email: "$ownerName"');
+        }
+      }
+
+      print('📝 Final owner name: "$ownerName"');
 
       // Create StoreListing in Firestore
       final listingData = {
         'title': title,
         'projectId': project.id,
         'ownerId': currentUserId,
+        'ownerName': ownerName,
         'price': price,
         'description': description,
         'thumbnailBase64': project.thumbnailBase64,
@@ -583,27 +678,61 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
         'isActive': true,
       };
 
+      print('📦 Creating marketplace listing for project: ${project.id} by $ownerName');
+      
       await FirebaseFirestore.instance
           .collection('artifacts')
-          .doc('muraloka_app')
+          .doc(appId)
           .collection('public')
           .doc('data')
           .collection('store_listings')
           .add(listingData);
 
+      print('✅ Listing created, updating project...');
+      
       // Update project to mark as in marketplace
-      await FirebaseFirestore.instance
-          .collection('artifacts')
-          .doc('muraloka_app')
-          .collection('private')
-          .doc(currentUserId)
-          .collection('projects')
-          .doc(project.id)
-          .update({
+      // Handle both private and shared projects
+      DocumentReference projectRef;
+      
+      if (project.isPublic) {
+        // Shared/collaborative project
+        print('📂 Updating shared project: ${project.id}');
+        projectRef = FirebaseFirestore.instance
+            .collection('artifacts')
+            .doc(appId)
+            .collection('public')
+            .doc('data')
+            .collection('projects_shared')
+            .doc(project.id);
+      } else {
+        // Private project
+        print('📂 Updating private project: ${project.id}');
+        projectRef = FirebaseFirestore.instance
+            .collection('artifacts')
+            .doc(appId)
+            .collection('users')
+            .doc(currentUserId)
+            .collection('projects')
+            .doc(project.id);
+      }
+      
+      print('🔍 Checking if project exists at: ${projectRef.path}');
+      
+      // Check if document exists first
+      final projectDoc = await projectRef.get();
+      if (!projectDoc.exists) {
+        throw Exception('Project not found in Firestore.\nPath: ${projectRef.path}\nProject ID: ${project.id}\nisPublic: ${project.isPublic}');
+      }
+      
+      print('✅ Project found, updating...');
+      
+      await projectRef.update({
         'isInMarketplace': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      print('✅ Project updated successfully');
+      
       Navigator.pop(context); // Close loading
 
       if (mounted) {
@@ -611,7 +740,13 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
         // Refresh the list
         setState(() {});
       }
-    } catch (e) {
+    } on FirebaseException catch (e) {
+      print('❌ Firebase error: ${e.code} - ${e.message}');
+      Navigator.pop(context); // Close loading if still open
+      _showError('Firebase error: ${e.message}');
+    } catch (e, stackTrace) {
+      print('❌ Failed to share to marketplace: $e');
+      print('Stack trace: $stackTrace');
       Navigator.pop(context); // Close loading if still open
       _showError('Failed to share to marketplace: $e');
     }
@@ -624,15 +759,22 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('Preparing artwork...'),
-            ],
-          ),
-        ),
+        builder: (context) {
+          final theme = ThemeManager.of(context);
+          
+          return AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Text(
+                  'Preparing artwork...',
+                  style: TextStyle(color: theme.textPrimary),
+                ),
+              ],
+            ),
+          );
+        },
       );
 
       // Get thumbnail image bytes
@@ -702,79 +844,189 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(PhosphorIcons.users_three, color: Colors.blue),
-            const SizedBox(width: 12),
-            const Text('Room Code'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Share this code with others to collaborate:',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue, width: 2),
+      builder: (dialogContext) {
+        final theme = ThemeManager.of(dialogContext);
+        
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(PhosphorIcons.users_three, color: theme.primary),
+              const SizedBox(width: 12),
+              const Text('Room Code'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Share this code with others to collaborate:',
+                style: TextStyle(fontSize: 14, color: theme.textSecondary),
               ),
-              child: Center(
-                child: Text(
-                  roomCode!,
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 8,
-                    fontFamily: 'monospace',
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: theme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: theme.primary, width: 2),
+                ),
+                child: Center(
+                  child: Text(
+                    roomCode!,
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                      fontFamily: 'monospace',
+                      color: theme.textPrimary,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(PhosphorIcons.users, size: 16, color: theme.textSecondary),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${project.collaboratorIds.length} collaborator(s)',
+                    style: TextStyle(fontSize: 12, color: theme.textSecondary),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                // Copy to clipboard
+                await Clipboard.setData(ClipboardData(text: roomCode!));
+                _showSuccess('Room code copied to clipboard');
+              },
+              icon: const Icon(PhosphorIcons.copy),
+              label: const Text('Copy Code'),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Icon(PhosphorIcons.users, size: 16, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(
-                  '${project.collaboratorIds.length} collaborator(s)',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _showCollaboratorsDialog(project);
+              },
+              icon: const Icon(PhosphorIcons.users_three),
+              label: const Text('Manage'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
             ),
           ],
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () async {
-              // Copy to clipboard
-              await Clipboard.setData(ClipboardData(text: roomCode!));
-              _showSuccess('Room code copied to clipboard');
-            },
-            icon: const Icon(PhosphorIcons.copy),
-            label: const Text('Copy Code'),
+        );
+      },
+    );
+  }
+
+  /// Show dialog requiring user to join via room code
+  Future<void> _showRoomCodeRequiredDialog(mvp.Project project) async {
+    final theme = ThemeManager.of(context);
+    
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(PhosphorIcons.lock_key, color: theme.warning),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Collaboration Mode Active'),
+              ),
+            ],
           ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _showCollaboratorsDialog(project);
-            },
-            icon: const Icon(PhosphorIcons.users_three),
-            label: const Text('Manage'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This project is in collaboration mode and can only be accessed using the room code.',
+                style: TextStyle(color: theme.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: theme.warning.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(PhosphorIcons.info, color: theme.warning, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'How to access:',
+                          style: TextStyle(
+                            color: theme.warning,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '1. Go to "My Projects" tab\n'
+                      '2. Find this project and tap "Share"\n'
+                      '3. Copy the room code\n'
+                      '4. Use "Join Collaboration" to enter',
+                      style: TextStyle(color: theme.textSecondary, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Room Code: ${project.roomCode}',
+                style: TextStyle(
+                  color: theme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: project.roomCode!));
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: const Text('Room code copied to clipboard!'),
+                      backgroundColor: theme.success,
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(PhosphorIcons.copy),
+              label: const Text('Copy Code'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                // Auto-open join dialog with pre-filled code
+                _showJoinRoomDialog();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.primary,
+                foregroundColor: theme.surface,
+              ),
+              child: const Text('Join Now'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -784,23 +1036,26 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
     final roomCode = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(PhosphorIcons.sign_in, color: Colors.green),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Join Collaboration'),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter the 6-digit room code:',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+      builder: (dialogContext) {
+        final theme = ThemeManager.of(dialogContext);
+        
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(PhosphorIcons.sign_in, color: theme.success),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Join Collaboration'),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter the 6-digit room code:',
+                style: TextStyle(fontSize: 14, color: theme.textSecondary),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -825,25 +1080,26 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              final code = codeController.text.trim();
-              if (code.length == 6) {
-                Navigator.pop(context, code);
-              } else {
-                showErrorSnackbar(context, 'Please enter a 6-digit code');
-              }
-            },
-            icon: const Icon(PhosphorIcons.sign_in),
-            label: const Text('Join'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                final code = codeController.text.trim();
+                if (code.length == 6) {
+                  Navigator.pop(context, code);
+                } else {
+                  showErrorSnackbar(context, 'Please enter a 6-digit code');
+                }
+              },
+              icon: const Icon(PhosphorIcons.sign_in),
+              label: const Text('Join'),
+            ),
+          ],
+        );
+      },
     );
 
     if (roomCode != null && roomCode.isNotEmpty) {
@@ -852,18 +1108,25 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            content: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 20),
-                Expanded(
-                  child: Text('Joining project...'),
-                ),
-              ],
-            ),
-          ),
+          builder: (context) {
+            final theme = ThemeManager.of(context);
+            
+            return AlertDialog(
+              content: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Text(
+                      'Joining project...',
+                      style: TextStyle(color: theme.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
 
         final project = await projectRepo.joinProjectByRoomCode(
@@ -922,14 +1185,17 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(PhosphorIcons.users_three, color: Colors.blue),
-            const SizedBox(width: 12),
-            const Text('Collaborators'),
-          ],
-        ),
+      builder: (dialogContext) {
+        final theme = ThemeManager.of(dialogContext);
+        
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(PhosphorIcons.users_three, color: theme.primary),
+              const SizedBox(width: 12),
+              const Text('Collaborators'),
+            ],
+          ),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -939,32 +1205,37 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
               // Owner info
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Colors.blue,
+                  backgroundColor: theme.primary,
                   backgroundImage: ownerPhoto != null ? NetworkImage(ownerPhoto) : null,
                   child: ownerPhoto == null 
-                    ? const Icon(PhosphorIcons.crown, color: Colors.white, size: 20)
+                    ? Icon(PhosphorIcons.crown, color: theme.surface, size: 20)
                     : null,
                 ),
                 title: Text(ownerName),
                 subtitle: const Text('Owner', style: TextStyle(fontSize: 10)),
-                trailing: const Chip(
-                  label: Text('Owner', style: TextStyle(fontSize: 10)),
-                  backgroundColor: Colors.blue,
-                  labelStyle: TextStyle(color: Colors.white),
+                trailing: Chip(
+                  label: const Text('Owner', style: TextStyle(fontSize: 10)),
+                  backgroundColor: theme.primary,
+                  labelStyle: TextStyle(color: theme.surface),
                 ),
               ),
               const Divider(),
               // Collaborators list
               if (project.collaboratorIds.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(
-                    child: Text(
-                      'No collaborators yet\nShare the room code to invite others',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final theme = ThemeManager.of(context);
+                    return Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                        child: Text(
+                          'No collaborators yet\nShare the room code to invite others',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.textSecondary),
+                        ),
+                      ),
+                    );
+                  },
                 )
               else
                 ...project.collaboratorIds.map((collaboratorId) {
@@ -1059,15 +1330,16 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                   }
                 }
               },
-              icon: const Icon(PhosphorIcons.prohibit, color: Colors.red),
+              icon: const Icon(PhosphorIcons.prohibit, color: AppColors.error),
               label: const Text('Revoke Code'),
             ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1081,19 +1353,24 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
+    
     return Scaffold(
+      backgroundColor: theme.background,
       appBar: AppBar(
-        backgroundColor: theme.secondary1,
-        title: const Text('My Projects'),
+        backgroundColor: theme.primary,
+        foregroundColor: theme.surface,
+        elevation: 0,
+        title: Text('My Projects', style: TextStyle(color: theme.surface, fontWeight: FontWeight.bold)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: theme.surface),
           onPressed: () => context.go('/home'),
         ),
         actions: [
           // Join Room button in AppBar
           IconButton(
-            icon: const Icon(PhosphorIcons.sign_in),
+            icon: Icon(PhosphorIcons.sign_in, color: theme.surface),
             tooltip: 'Join Collaboration',
             onPressed: _showJoinRoomDialog,
           ),
@@ -1131,6 +1408,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
         final projects = snapshot.data ?? [];
 
         // Filter out projects that are already in marketplace
+        // Note: Projects with room code WILL be shown here (My Projects page)
         final filteredProjects = projects
             .where((project) => !project.isInMarketplace)
             .toList();
@@ -1167,6 +1445,10 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
 
   Widget _buildProjectCard(mvp.Project project, {required bool isShared}) {
     final isOwner = project.isOwner(currentUserId);
+    final hasRoomCode = project.roomCode != null && project.roomCode!.isNotEmpty;
+
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -1174,11 +1456,22 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () {
+          // 🔒 SECURITY: If project has room code, force user to join via code
+          if (hasRoomCode) {
+            _showRoomCodeRequiredDialog(project);
+            return;
+          }
+          
+          // Open project in collaboration mode if it has room code
+          final bool shouldOpenAsShared = hasRoomCode || isShared;
+          
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  LayerPaintPage(projectId: project.id, isShared: isShared),
+              builder: (context) => LayerPaintPage(
+                projectId: project.id, 
+                isShared: shouldOpenAsShared,
+              ),
             ),
           );
         },
@@ -1191,12 +1484,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Colors.grey[300]!, Colors.grey[100]!],
-                  ),
+                  color: theme.surfaceVariant,
                 ),
                 child: project.thumbnailBase64 != null
                     ? Image.memory(
@@ -1219,10 +1507,11 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                     // Project name
                     Text(
                       project.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 13, // Reduced from 14
+                        fontSize: 13,
                         height: 1.1,
+                        color: theme.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1233,15 +1522,15 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                       children: [
                         Icon(
                           PhosphorIcons.frame_corners,
-                          size: 12, // Reduced from 13
-                          color: Colors.grey[600],
+                          size: 12,
+                          color: theme.textSecondary,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           '${project.canvasWidth} × ${project.canvasHeight}',
                           style: TextStyle(
-                            fontSize: 10, // Reduced from 11
-                            color: Colors.grey[600],
+                            fontSize: 10,
+                            color: theme.textSecondary,
                           ),
                         ),
                         const Spacer(), // Push badges to right
@@ -1253,9 +1542,12 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                               vertical: 1,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green[50],
+                              color: theme.success.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(3),
-                              border: Border.all(color: Colors.green, width: 0.5),
+                              border: Border.all(
+                                color: theme.success,
+                                width: 0.5,
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1263,7 +1555,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                 Icon(
                                   PhosphorIcons.key,
                                   size: 8,
-                                  color: Colors.green[700],
+                                  color: theme.success,
                                 ),
                                 const SizedBox(width: 2),
                                 Text(
@@ -1271,7 +1563,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                   style: TextStyle(
                                     fontSize: 7,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.green[700],
+                                    color: theme.success,
                                     fontFamily: 'monospace',
                                   ),
                                 ),
@@ -1287,7 +1579,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                               vertical: 1,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.blue[50],
+                              color: theme.info.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(3),
                             ),
                             child: Row(
@@ -1296,7 +1588,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                 Icon(
                                   PhosphorIcons.users,
                                   size: 8,
-                                  color: Colors.blue[700],
+                                  color: theme.info,
                                 ),
                                 const SizedBox(width: 1),
                                 Text(
@@ -1304,7 +1596,7 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                   style: TextStyle(
                                     fontSize: 8,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.blue[700],
+                                    color: theme.info,
                                   ),
                                 ),
                               ],
@@ -1323,7 +1615,9 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                             vertical: 2, // Reduced from 3
                           ),
                           decoration: BoxDecoration(
-                            color: isOwner ? Colors.blue[50] : Colors.grey[200],
+                            color: isOwner 
+                                ? theme.info.withOpacity(0.2)
+                                : theme.surfaceVariant,
                             borderRadius: BorderRadius.circular(
                               8,
                             ), // Reduced from 10
@@ -1337,8 +1631,8 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                     : PhosphorIcons.lock,
                                 size: 10, // Reduced from 11
                                 color: isOwner
-                                    ? Colors.blue[700]
-                                    : Colors.grey[600],
+                                    ? theme.info
+                                    : theme.textSecondary,
                               ),
                               const SizedBox(width: 2), // Reduced from 3
                               Text(
@@ -1347,8 +1641,8 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                                   fontSize: 9, // Reduced from 10
                                   fontWeight: FontWeight.w600,
                                   color: isOwner
-                                      ? Colors.blue[700]
-                                      : Colors.grey[600],
+                                      ? theme.info
+                                      : theme.textSecondary,
                                 ),
                               ),
                             ],
@@ -1359,117 +1653,119 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
                           icon: Icon(
                             PhosphorIcons.dots_three_vertical,
                             size: 16, // Reduced from 18
-                            color: Colors.grey[600],
+                            color: theme.textSecondary,
                           ),
                           padding: EdgeInsets.zero,
-                          itemBuilder: (context) => [
-                            if (isOwner)
-                              const PopupMenuItem<String>(
-                                value: 'rename',
+                          itemBuilder: (context) {                            
+                            return [
+                              if (isOwner)
+                                PopupMenuItem<String>(
+                                  value: 'rename',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.pencil, size: 20, color: theme.textPrimary),
+                                      const SizedBox(width: 8),
+                                      Text('Rename', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              // === COLLABORATION MENU ITEMS ===
+                              if (isOwner && project.roomCode == null)
+                                PopupMenuItem<String>(
+                                  value: 'generate_code',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.key, size: 20, color: theme.success),
+                                      const SizedBox(width: 8),
+                                      Text('Generate Room Code', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              if (isOwner && project.roomCode != null)
+                                PopupMenuItem<String>(
+                                  value: 'show_code',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.qr_code, size: 20, color: theme.success),
+                                      const SizedBox(width: 8),
+                                      Text('Show Room Code', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              if (isOwner && project.collaboratorIds.isNotEmpty)
+                                PopupMenuItem<String>(
+                                  value: 'manage_collaborators',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.users_three, size: 20, color: theme.info),
+                                      const SizedBox(width: 8),
+                                      Text('Manage Collaborators', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              // === END COLLABORATION MENU ===
+                              if (isOwner && !project.isInMarketplace)
+                                PopupMenuItem<String>(
+                                  value: 'share_marketplace',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.storefront, size: 20, color: theme.success),
+                                      const SizedBox(width: 8),
+                                      Text('Share to Marketplace', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              PopupMenuItem<String>(
+                                value: 'share_artwork',
                                 child: Row(
                                   children: [
-                                    Icon(PhosphorIcons.pencil, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Rename'),
+                                    Icon(PhosphorIcons.share, size: 20, color: theme.warning),
+                                    const SizedBox(width: 8),
+                                    Text('Share Artwork', style: TextStyle(color: theme.textPrimary)),
                                   ],
                                 ),
                               ),
-                            // === COLLABORATION MENU ITEMS ===
-                            if (isOwner && project.roomCode == null)
-                              const PopupMenuItem<String>(
-                                value: 'generate_code',
+                              
+                              if (isOwner && isShared)
+                                PopupMenuItem<String>(
+                                  value: 'unshare',
+                                  child: Row(
+                                    children: [
+                                      Icon(PhosphorIcons.lock, color: theme.textPrimary),
+                                      const SizedBox(width: 8),
+                                      Text('Make Private', style: TextStyle(color: theme.textPrimary)),
+                                    ],
+                                  ),
+                                ),
+                              PopupMenuItem<String>(
+                                value: 'preview',
                                 child: Row(
                                   children: [
-                                    Icon(PhosphorIcons.key, size: 20, color: Colors.green),
-                                    SizedBox(width: 8),
-                                    Text('Generate Room Code'),
+                                    Icon(PhosphorIcons.eye, size: 20, color: theme.textPrimary),
+                                    const SizedBox(width: 8),
+                                    Text('Preview', style: TextStyle(color: theme.textPrimary)),
                                   ],
                                 ),
                               ),
-                            if (isOwner && project.roomCode != null)
-                              const PopupMenuItem<String>(
-                                value: 'show_code',
-                                child: Row(
-                                  children: [
-                                    Icon(PhosphorIcons.qr_code, size: 20, color: Colors.green),
-                                    SizedBox(width: 8),
-                                    Text('Show Room Code'),
-                                  ],
+                              if (isOwner)
+                                PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        PhosphorIcons.trash,
+                                        color: theme.error,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Delete',
+                                        style: TextStyle(color: theme.error),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            if (isOwner && project.collaboratorIds.isNotEmpty)
-                              const PopupMenuItem<String>(
-                                value: 'manage_collaborators',
-                                child: Row(
-                                  children: [
-                                    Icon(PhosphorIcons.users_three, size: 20, color: Colors.blue),
-                                    SizedBox(width: 8),
-                                    Text('Manage Collaborators'),
-                                  ],
-                                ),
-                              ),
-                            // === END COLLABORATION MENU ===
-                            if (isOwner && !project.isInMarketplace)
-                              const PopupMenuItem<String>(
-                                value: 'share_marketplace',
-                                child: Row(
-                                  children: [
-                                    Icon(PhosphorIcons.storefront, size: 20, color: Colors.green),
-                                    SizedBox(width: 8),
-                                    Text('Share to Marketplace'),
-                                  ],
-                                ),
-                              ),
-                            const PopupMenuItem<String>(
-                              value: 'share_artwork',
-                              child: Row(
-                                children: [
-                                  Icon(PhosphorIcons.share, size: 20, color: Colors.orange),
-                                  SizedBox(width: 8),
-                                  Text('Share Artwork'),
-                                ],
-                              ),
-                            ),
-                            
-                            if (isOwner && isShared)
-                              const PopupMenuItem<String>(
-                                value: 'unshare',
-                                child: Row(
-                                  children: [
-                                    Icon(PhosphorIcons.lock),
-                                    SizedBox(width: 8),
-                                    Text('Make Private'),
-                                  ],
-                                ),
-                              ),
-                            const PopupMenuItem<String>(
-                              value: 'preview',
-                              child: Row(
-                                children: [
-                                  Icon(PhosphorIcons.eye, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('Preview'),
-                                ],
-                              ),
-                            ),
-                            if (isOwner)
-                              const PopupMenuItem<String>(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      PhosphorIcons.trash,
-                                      color: Colors.red,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Delete',
-                                      style: TextStyle(color: Colors.red),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ], // itemBuilder list closing
+                            ];
+                          },
                           onSelected: (value) {
                             switch (value) {
                               case 'rename':
@@ -1516,8 +1812,11 @@ class _ProjectsGalleryPageState extends State<ProjectsGalleryPage> {
   }
 
   Widget _buildPlaceholderIcon() {
+    // Use ThemeManager from constant.dart
+    final theme = ThemeManager.of(context);
+    
     return Center(
-      child: Icon(PhosphorIcons.image, size: 48, color: Colors.grey[400]),
+      child: Icon(PhosphorIcons.image, size: 48, color: theme.textSecondary),
     );
   }
 }
@@ -1556,30 +1855,41 @@ class _ShareToMarketplaceDialogState extends State<_ShareToMarketplaceDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Theme-aware colors
+    final theme = ThemeManager.of(context);
+    
     return AlertDialog(
-      title: const Row(
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIcons.storefront, color: Colors.green, size: 20),
-          SizedBox(width: 8),
-          Flexible(
+          Icon(PhosphorIcons.storefront, color: theme.success, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
               'Share to Marketplace',
-              style: TextStyle(fontSize: 18),
+              style: TextStyle(fontSize: 18, color: theme.textPrimary),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxWidth: 500,
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Fill in the details for your marketplace listing:',
-                style: TextStyle(fontSize: 14, color: Colors.grey),
+                style: TextStyle(fontSize: 14, color: theme.textSecondary),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -1635,22 +1945,21 @@ class _ShareToMarketplaceDialogState extends State<_ShareToMarketplaceDialog> {
               ),
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.all(12),
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  border: Border.all(color: Colors.orange.shade200),
+                  color: theme.warning.withOpacity(0.2),
+                  border: Border.all(color: theme.warning),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Icon(PhosphorIcons.warning, color: Colors.orange.shade700, size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Project will be moved to marketplace.',
-                        style: TextStyle(fontSize: 11),
-                      ),
+                    Icon(PhosphorIcons.warning, color: theme.warning, size: 18),
+                    Text(
+                      'Project will be moved to marketplace.',
+                      style: TextStyle(fontSize: 11, color: theme.textPrimary),
                     ),
                   ],
                 ),
@@ -1659,10 +1968,11 @@ class _ShareToMarketplaceDialogState extends State<_ShareToMarketplaceDialog> {
           ),
         ),
       ),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text('Cancel', style: TextStyle(color: theme.textSecondary)),
         ),
         ElevatedButton(
           onPressed: () {
@@ -1678,7 +1988,7 @@ class _ShareToMarketplaceDialogState extends State<_ShareToMarketplaceDialog> {
             }
           },
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
+            backgroundColor: theme.success,
             foregroundColor: Colors.white,
           ),
           child: const Text('Share'),

@@ -51,9 +51,9 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _backgroundColor => _isDark ? AppColors.darkBackground : AppColors.lightBackground;
   Color get _surfaceColor => _isDark ? AppColors.darkSurface : AppColors.lightSurface;
-  Color get _primaryColor => _isDark ? AppColors.darkAccent : AppColors.lightAccent;
-  Color get _textColor => _isDark ? Colors.white : Colors.black87;
-  Color get _subtitleColor => _isDark ? Colors.white70 : Colors.black54;
+  Color get _primaryColor => _isDark ? AppColors.darkAccent : AppColors.primary1;
+  Color get _textColor => _isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+  Color get _subtitleColor => _isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -148,12 +148,12 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: AppColors.getSurface(context).withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.shopping_bag,
-                  color: Colors.white,
+                  color: _isDark ? AppColors.darkTextPrimary : _primaryColor,
                   size: 20,
                 ),
               ),
@@ -161,8 +161,8 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
               Expanded(
                 child: Text(
                   widget.listing.title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -177,12 +177,12 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           // Seller Info
           Row(
             children: [
-              const Icon(Icons.store, color: Colors.white70, size: 16),
+              Icon(Icons.store, color: _isDark ? AppColors.darkTextSecondary : AppColors.lightSurface.withOpacity(0.9), size: 16),
               const SizedBox(width: 8),
               Text(
                 'Penjual: ${widget.sellerName}',
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: _isDark ? AppColors.darkTextSecondary : AppColors.lightSurface.withOpacity(0.9),
                   fontSize: 13,
                 ),
               ),
@@ -193,13 +193,13 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           // Project ID
           Row(
             children: [
-              const Icon(Icons.tag, color: Colors.white70, size: 16),
+              Icon(Icons.tag, color: _isDark ? AppColors.darkTextSecondary : AppColors.lightSurface.withOpacity(0.9), size: 16),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'ID: ${widget.listing.id}',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: _isDark ? AppColors.darkTextSecondary : AppColors.lightSurface.withOpacity(0.9),
                     fontSize: 13,
                   ),
                   maxLines: 1,
@@ -209,23 +209,23 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
             ],
           ),
           
-          const Divider(color: Colors.white30, height: 24),
+          Divider(color: _isDark ? AppColors.darkDivider : AppColors.lightSurface.withOpacity(0.3), height: 24),
           
           // Price
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Total Pembayaran',
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: _isDark ? AppColors.darkTextSecondary : AppColors.lightSurface.withOpacity(0.9),
                   fontSize: 14,
                 ),
               ),
               Text(
                 QRISPaymentService.formatRupiah(widget.listing.price),
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
@@ -279,7 +279,7 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _isDark ? Colors.black26 : _primaryColor.withOpacity(0.15),
+                  color: _isDark ? AppColors.darkShadow : _primaryColor.withOpacity(0.15),
                   blurRadius: 25,
                   offset: const Offset(0, 5),
                 ),
@@ -290,11 +290,11 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: _isDark ? Colors.white.withOpacity(0.95) : Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: _isDark ? Colors.black38 : Colors.black.withOpacity(0.05),
+                        color: _isDark ? AppColors.darkShadow : AppColors.lightShadow,
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -332,13 +332,13 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
-                      SizedBox(width: 10),
+                    children: [
+                      Icon(Icons.qr_code_scanner, color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface, size: 20),
+                      const SizedBox(width: 10),
                       Text(
                         'Scan untuk Membayar',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -373,7 +373,7 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           Text(
             'Tampilan QR code standar hitam putih',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[600],
+              color: _subtitleColor,
             ),
           ),
           const SizedBox(height: 24),
@@ -381,12 +381,12 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surfaceColor,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey[300]!, width: 2),
+              border: Border.all(color: _isDark ? AppColors.darkBorder : AppColors.lightBorder, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: _isDark ? AppColors.darkShadow : AppColors.lightShadow,
                   blurRadius: 20,
                   offset: const Offset(0, 4),
                 ),
@@ -397,14 +397,14 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: PrettyQrView.data(
                     data: qrisString,
                     errorCorrectLevel: QrErrorCorrectLevel.H,
-                    decoration: const PrettyQrDecoration(
-                      shape: PrettyQrSmoothSymbol(color: Colors.black),
+                    decoration: PrettyQrDecoration(
+                      shape: PrettyQrSmoothSymbol(color: _textColor),
                     ),
                   ),
                 ),
@@ -412,18 +412,18 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.grey[900],
+                    color: _primaryColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.qr_code, color: Colors.white, size: 18),
-                      SizedBox(width: 8),
+                    children: [
+                      Icon(Icons.qr_code, color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface, size: 18),
+                      const SizedBox(width: 8),
                       Text(
                         'QRIS Payment Code',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -458,7 +458,7 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           Text(
             'Dengan sudut bulat penuh untuk tampilan unik',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[600],
+              color: _subtitleColor,
             ),
           ),
           const SizedBox(height: 24),
@@ -470,15 +470,15 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.purple.shade50,
-                  Colors.blue.shade50,
+                  _isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant,
+                  _isDark ? AppColors.darkSurface : AppColors.lightSurface,
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.purple.withOpacity(0.3), width: 2),
+              border: Border.all(color: _primaryColor.withOpacity(0.3), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.purple.withOpacity(0.1),
+                  color: _isDark ? AppColors.darkShadow : AppColors.lightShadow,
                   blurRadius: 20,
                   offset: const Offset(0, 5),
                 ),
@@ -489,11 +489,11 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: _isDark ? AppColors.darkShadow : AppColors.lightShadow,
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -502,8 +502,8 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                   child: PrettyQrView.data(
                     data: qrisString,
                     errorCorrectLevel: QrErrorCorrectLevel.H,
-                    decoration: const PrettyQrDecoration(
-                      shape: PrettyQrRoundedSymbol(color: Colors.purple),
+                    decoration: PrettyQrDecoration(
+                      shape: PrettyQrRoundedSymbol(color: _primaryColor),
                     ),
                   ),
                 ),
@@ -511,13 +511,13 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Colors.purple, Colors.deepPurple],
+                    gradient: LinearGradient(
+                      colors: [_primaryColor, _primaryColor.withOpacity(0.7)],
                     ),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.purple.withOpacity(0.3),
+                        color: _primaryColor.withOpacity(0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -525,13 +525,13 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.rounded_corner, color: Colors.white, size: 18),
-                      SizedBox(width: 8),
+                    children: [
+                      Icon(Icons.rounded_corner, color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface, size: 18),
+                      const SizedBox(width: 8),
                       Text(
                         'Rounded QR Code',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -554,21 +554,21 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: _isDark ? AppColors.darkSurfaceVariant : AppColors.lightSurfaceVariant,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(color: _primaryColor.withOpacity(0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info, color: Colors.blue.shade700, size: 20),
+              Icon(Icons.info, color: _primaryColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Cara Pembayaran',
                 style: TextStyle(
-                  color: Colors.blue.shade900,
+                  color: _textColor,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -597,14 +597,14 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: Colors.blue.shade700,
+              color: _primaryColor,
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Text(
                 number,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -616,7 +616,7 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
             child: Text(
               text,
               style: TextStyle(
-                color: Colors.blue.shade900,
+                color: _subtitleColor,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -632,10 +632,10 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: _isDark ? AppColors.darkShadow : AppColors.lightShadow,
             blurRadius: 10,
             offset: const Offset(0, -3),
           ),
@@ -693,17 +693,17 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
     setState(() => _isCopied = true);
     
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Row(
           children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 12),
-            Text('QRIS code berhasil disalin ke clipboard'),
+            Icon(Icons.check_circle, color: _isDark ? AppColors.darkTextPrimary : AppColors.lightSurface),
+            const SizedBox(width: 12),
+            const Text('QRIS code berhasil disalin ke clipboard'),
           ],
         ),
-        backgroundColor: Colors.green,
+        backgroundColor: _isDark ? AppColors.darkSuccess : AppColors.success,
         behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
       ),
     );
     
@@ -717,17 +717,18 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: _surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
-          children: const [
-            Icon(Icons.check_circle, color: Colors.green, size: 28),
-            SizedBox(width: 12),
-            Text('Konfirmasi Pembayaran'),
+          children: [
+            Icon(Icons.check_circle, color: _isDark ? AppColors.darkSuccess : AppColors.success, size: 28),
+            const SizedBox(width: 12),
+            Text('Konfirmasi Pembayaran', style: TextStyle(color: _textColor)),
           ],
         ),
-        content: const Text(
+        content: Text(
           'Apakah Anda sudah menyelesaikan pembayaran melalui aplikasi mobile banking?',
-          style: TextStyle(fontSize: 14),
+          style: TextStyle(fontSize: 14, color: _subtitleColor),
         ),
         actions: [
           TextButton(
@@ -750,12 +751,13 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: _surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
-          children: const [
-            Icon(Icons.info_outline, color: Colors.blue),
-            SizedBox(width: 12),
-            Text('Informasi Pembayaran'),
+          children: [
+            Icon(Icons.info_outline, color: _primaryColor),
+            const SizedBox(width: 12),
+            Text('Informasi Pembayaran', style: TextStyle(color: _textColor)),
           ],
         ),
         content: SingleChildScrollView(
@@ -772,11 +774,14 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
                 'Aplikasi yang Mendukung QRIS:',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
+                  color: _textColor,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text('• GoPay\n• OVO\n• Dana\n• ShopeePay\n• LinkAja\n• BCA Mobile\n• Mandiri Online\n• Dan aplikasi e-wallet lainnya'),
+              Text(
+                '• GoPay\n• OVO\n• Dana\n• ShopeePay\n• LinkAja\n• BCA Mobile\n• Mandiri Online\n• Dan aplikasi e-wallet lainnya',
+                style: TextStyle(color: _subtitleColor),
+              ),
             ],
           ),
         ),
@@ -801,7 +806,7 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
             child: Text(
               label,
               style: TextStyle(
-                color: Colors.grey[600],
+                color: _subtitleColor,
                 fontSize: 13,
               ),
             ),
@@ -809,9 +814,10 @@ class _QRISPaymentPageState extends State<QRISPaymentPage>
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w500,
                 fontSize: 13,
+                color: _textColor,
               ),
             ),
           ),

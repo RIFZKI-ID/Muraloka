@@ -5,14 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:muraloka/constant/constant.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import '../model/store_listing.dart';
-import '../model/project.dart' as mvp;
-import '../model/layer.dart' as mvp;
 import '../data_api/store_listing_repository.dart';
 import '../data_api/project_repository.dart';
-import '../data_api/layer_repository.dart';
 import '../widgets/ui_helpers.dart';
 import '../widgets/animated_widgets.dart';
 import '../../presentation/pages/qris_webview_page.dart';
@@ -64,285 +60,11 @@ class _MarketplacePageState extends State<MarketplacePage>
     await Future.delayed(const Duration(milliseconds: 300));
   }
 
-  /// Show publish to store dialog (owner only)
-  Future<void> _showPublishDialog() async {
-    // Get user's shared projects that are not yet published
-    final projects = await projectRepo.streamSharedProjects().first;
-    final userProjects = projects
-        .where((p) => p.isOwner(currentUserId))
-        .toList();
-
-    if (userProjects.isEmpty) {
-      _showError('You need to create and share a project first');
-      return;
-    }
-
-    mvp.Project? selectedProject;
-    final titleController = TextEditingController();
-    final descController = TextEditingController();
-    final priceController = TextEditingController(text: '0');
-    final tagsController = TextEditingController();
-
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Publish to Store'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Select Project:'),
-                DropdownButton<mvp.Project>(
-                  isExpanded: true,
-                  value: selectedProject,
-                  hint: const Text('Choose a project'),
-                  items: userProjects.map((project) {
-                    return DropdownMenuItem(
-                      value: project,
-                      child: Text(project.name),
-                    );
-                  }).toList(),
-                  onChanged: (project) {
-                    setDialogState(() {
-                      selectedProject = project;
-                      titleController.text = project?.name ?? '';
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Listing Title',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceController,
-                  decoration: const InputDecoration(
-                    labelText: 'Price (IDR)',
-                    border: OutlineInputBorder(),
-                    prefixText: 'Rp ',
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: tagsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tags (comma-separated)',
-                    border: OutlineInputBorder(),
-                    hintText: 'landscape, digital, abstract',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: selectedProject == null
-                  ? null
-                  : () {
-                      Navigator.pop(context, {
-                        'project': selectedProject,
-                        'title': titleController.text,
-                        'description': descController.text,
-                        'price': double.tryParse(priceController.text) ?? 0.0,
-                        'tags': tagsController.text
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList(),
-                      });
-                    },
-              child: const Text('Publish'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (result != null) {
-      _publishToStore(result);
-    }
-  }
-
-  /// Publish project to store
-  Future<void> _publishToStore(Map<String, dynamic> data) async {
-    try {
-      final mvp.Project project = data['project'];
-
-      print('Publishing project: ${project.name} (ID: ${project.id})');
-      print(
-        'Initial thumbnail: ${project.thumbnailBase64?.substring(0, 50) ?? "null"}...',
-      );
-
-      // Generate thumbnail if project doesn't have one
-      String? thumbnailBase64 = project.thumbnailBase64;
-      if (thumbnailBase64 == null || thumbnailBase64.isEmpty) {
-        print('Generating thumbnail for project...');
-        thumbnailBase64 = await _generateProjectThumbnail(project);
-        print(
-          'Generated thumbnail: ${thumbnailBase64?.substring(0, 50) ?? "null"}...',
-        );
-      }
-
-      if (thumbnailBase64 == null || thumbnailBase64.isEmpty) {
-        _showError(
-          'Cannot publish: No thumbnail available. Please draw something first.',
-        );
-        return;
-      }
-
-      final listing = StoreListing(
-        id: '',
-        title: data['title'],
-        projectId: project.id,
-        ownerId: currentUserId,
-        price: data['price'],
-        description: data['description'],
-        thumbnailBase64: thumbnailBase64,
-        tags: data['tags'],
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      await listingRepo.createListing(listing);
-      print(
-        'Listing created successfully with thumbnail length: ${thumbnailBase64.length}',
-      );
-      _showSuccess('Published to store successfully!');
-      setState(() {}); // Refresh listings
-    } catch (e) {
-      print('Error publishing to store: $e');
-      _showError('Failed to publish: $e');
-    }
-  }
-
-  /// Generate thumbnail from project layers
-  Future<String?> _generateProjectThumbnail(mvp.Project project) async {
-    try {
-      print('Generating thumbnail for project: ${project.id}');
-
-      // Get all layers for the project
-      final layerRepo = LayerRepository(appId: appId);
-      final layers = await layerRepo.streamSharedLayers(project.id).first;
-
-      print('Found ${layers.length} layers');
-
-      if (layers.isEmpty) {
-        print('No layers to render');
-        return null; // No layers to render
-      }
-
-      // Create a picture recorder to draw all layers
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      final size = Size(
-        project.canvasWidth.toDouble(),
-        project.canvasHeight.toDouble(),
-      );
-
-      print('Canvas size: ${size.width}x${size.height}');
-
-      // Draw white background
-      final paint = Paint()..color = Colors.white;
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
-
-      // Draw all visible layers (sorted by zIndex)
-      final sortedLayers = List<mvp.Layer>.from(layers)
-        ..sort((a, b) => a.zIndex.compareTo(b.zIndex));
-
-      int strokeCount = 0;
-      for (final layer in sortedLayers) {
-        if (!layer.isVisible) continue;
-
-        print(
-          'Drawing layer ${layer.name} with ${layer.strokes.length} strokes',
-        );
-
-        // Draw each stroke in the layer
-        for (final strokeData in layer.strokes) {
-          // Strokes are stored as Map<String, dynamic>
-          final points = strokeData['points'] as List<dynamic>? ?? [];
-          if (points.isEmpty) continue;
-
-          final path = Path();
-          for (var i = 0; i < points.length; i++) {
-            final point = points[i] as Map<String, dynamic>;
-            final x = (point['x'] as num).toDouble();
-            final y = (point['y'] as num).toDouble();
-
-            if (i == 0) {
-              path.moveTo(x, y);
-            } else {
-              path.lineTo(x, y);
-            }
-          }
-
-          final color = strokeData['color'] as int? ?? 0xFF000000;
-          final strokeWidth =
-              (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
-
-          final strokePaint = Paint()
-            ..color = Color(color).withOpacity(layer.opacity)
-            ..strokeWidth = strokeWidth
-            ..strokeCap = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round
-            ..style = PaintingStyle.stroke;
-
-          canvas.drawPath(path, strokePaint);
-          strokeCount++;
-        }
-      }
-
-      print('Drew $strokeCount strokes total');
-
-      // Convert to image (create thumbnail at 400x300 for smaller file size)
-      final picture = recorder.endRecording();
-      final thumbnailWidth = 400;
-      final thumbnailHeight = (400 * size.height / size.width).toInt();
-
-      print('Creating thumbnail: ${thumbnailWidth}x$thumbnailHeight');
-
-      final image = await picture.toImage(thumbnailWidth, thumbnailHeight);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-      if (byteData == null) {
-        print('Failed to convert image to bytes');
-        return null;
-      }
-
-      // Convert to base64
-      final bytes = byteData.buffer.asUint8List();
-      final base64String = base64Encode(bytes);
-
-      print('Thumbnail generated: ${base64String.length} bytes');
-      return base64String;
-    } catch (e) {
-      print('Failed to generate thumbnail: $e');
-      return null;
-    }
-  }
-
   /// Show listing details
   void _showListingDetails(StoreListing listing) {
+    // Use ThemeManager
+    final theme = ThemeManager.of(context);
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -353,178 +75,270 @@ class _MarketplacePageState extends State<MarketplacePage>
             children: [
               // Thumbnail with fullscreen preview on tap
               Expanded(
-                flex: 2,
-                child: GestureDetector(
-                  onTap: () {
-                    // Show fullscreen image preview
-                    if (listing.thumbnailBase64 != null) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => _FullScreenImageViewer(
-                            imageBytes: base64Decode(listing.thumbnailBase64!),
-                            title: listing.title,
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  child: Container(
-                    color: Colors.grey[200],
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        listing.thumbnailBase64 != null
-                            ? Image.memory(
-                                base64Decode(listing.thumbnailBase64!),
-                                fit: BoxFit.cover,
-                              )
-                            : const Icon(PhosphorIcons.image, size: 64),
-                        // Fullscreen icon overlay
-                        if (listing.thumbnailBase64 != null)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                PhosphorIcons.arrows_out,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                      ],
+              flex: 2,
+              child: GestureDetector(
+                onTap: () {
+                // Show fullscreen image preview
+                if (listing.thumbnailBase64 != null) {
+                  Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => _FullScreenImageViewer(
+                    imageBytes: base64Decode(listing.thumbnailBase64!),
+                    title: listing.title,
                     ),
                   ),
+                  );
+                }
+                },
+                child: Container(
+                color: theme.surfaceVariant,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                  listing.thumbnailBase64 != null
+                    ? Image.memory(
+                      base64Decode(listing.thumbnailBase64!),
+                      fit: BoxFit.cover,
+                      )
+                    : const Icon(PhosphorIcons.image, size: 64),
+                  // Fullscreen icon overlay
+                  if (listing.thumbnailBase64 != null)
+                    Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                      color: AppColors.semiBlack,
+                      borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                      PhosphorIcons.arrows_out,
+                      color: theme.surface,
+                      size: 20,
+                      ),
+                    ),
+                    ),
+                  ],
                 ),
+                ),
+              ),
               ),
               // Details
               Expanded(
-                flex: 3,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        listing.title,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Rp ${listing.price.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Icon(
-                            PhosphorIcons.star_fill,
-                            color: Colors.amber,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${listing.averageRating.toStringAsFixed(1)} (${listing.totalReviews} reviews)',
-                          ),
-                          const SizedBox(width: 16),
-                          const Icon(PhosphorIcons.shopping_cart, size: 20),
-                          const SizedBox(width: 4),
-                          Text('${listing.totalSold} sold'),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      if (listing.description != null &&
-                          listing.description!.isNotEmpty) ...[
-                        const Text(
-                          'Description:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(listing.description!),
-                        const SizedBox(height: 16),
-                      ],
-                      if (listing.tags.isNotEmpty) ...[
-                        const Text(
-                          'Tags:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: listing.tags.map((tag) {
-                            return Chip(
-                              label: Text(tag),
-                              backgroundColor: Colors.blue[100],
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ],
+              flex: 3,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                  listing.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
                   ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                  'Rp ${listing.price.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: theme.success,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                  children: [
+                    const Icon(
+                    PhosphorIcons.star_fill,
+                    color: AppColors.amber,
+                    size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                    '${listing.averageRating.toStringAsFixed(1)} (${listing.totalReviews} reviews)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.textSecondary,
+                      fontSize: 12,
+                    ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(
+                    PhosphorIcons.shopping_cart,
+                    size: 20,
+                    color: theme.textPrimary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                    '${listing.totalSold} sold',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.textSecondary,
+                      fontSize: 12,
+                    ),
+                    ),
+                  ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Creator info
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: theme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.textTertiary.withOpacity(0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.user_circle,
+                          size: 18,
+                          color: theme.textSecondary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Created by: ',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.textTertiary,
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            listing.ownerName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: theme.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (listing.description != null &&
+                    listing.description!.isNotEmpty) ...[
+                  Text(
+                    'Description:',
+                    style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: theme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    listing.description!,
+                    style: TextStyle(color: theme.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  ],
+                  if (listing.tags.isNotEmpty) ...[
+                  Text(
+                    'Tags:',
+                    style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: theme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: listing.tags.map((tag) {
+                    return Chip(
+                      label: Text(
+                      tag,
+                      style: TextStyle(color: theme.textPrimary),
+                      ),
+                      backgroundColor: theme.surfaceVariant,
+                    );
+                    }).toList(),
+                  ),
+                  ],
+                ],
                 ),
+              ),
               ),
               // Actions
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: listing.isOwner(currentUserId)
-                    ? Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _toggleListingStatus(listing);
-                              },
-                              icon: Icon(
-                                listing.isActive
-                                    ? PhosphorIcons.eye_slash
-                                    : PhosphorIcons.eye,
-                              ),
-                              label: Text(
-                                listing.isActive ? 'Deactivate' : 'Activate',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteListing(listing);
-                              },
-                              icon: const Icon(PhosphorIcons.trash),
-                              label: const Text('Delete'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _purchaseListing(listing);
-                        },
-                        icon: const Icon(PhosphorIcons.shopping_cart),
-                        label: const Text('Buy Now'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
+              padding: const EdgeInsets.all(16),
+              child: listing.isOwner(currentUserId)
+                ? Row(
+                  children: [
+                    Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _toggleListingStatus(listing);
+                      },
+                      icon: Icon(
+                        listing.isActive
+                          ? PhosphorIcons.eye_slash
+                          : PhosphorIcons.eye,
                       ),
+                      label: Text(
+                        listing.isActive ? 'Deactivate' : 'Activate',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        textStyle: const TextStyle(fontSize: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      ),
+                    ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _deleteListing(listing);
+                      },
+                      icon: const Icon(PhosphorIcons.trash),
+                      label: const Text('Delete'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.error,
+                        textStyle: const TextStyle(fontSize: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      ),
+                    ),
+                    ),
+                  ],
+                  )
+                : SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                    Navigator.pop(context);
+                    _purchaseListing(listing);
+                    },
+                    icon: const Icon(PhosphorIcons.shopping_cart),
+                    label: const Text('Buy Now'),
+                    style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.success,
+                    textStyle: const TextStyle(fontSize: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                  ),
               ),
             ],
           ),
@@ -612,30 +426,37 @@ class _MarketplacePageState extends State<MarketplacePage>
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
+
     return Scaffold(
+      backgroundColor: theme.background,
       appBar: AppBar(
-        backgroundColor: theme.secondary1,
-        title: const Text('Marketplace'),
+        backgroundColor: theme.primary,
+        foregroundColor: theme.surface,
+        elevation: 0,
+        title: Text(
+          'Marketplace',
+          style: TextStyle(color: theme.surface, fontWeight: FontWeight.bold),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: theme.surface),
           onPressed: () => context.go('/home'),
         ),
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.white, // Warna text saat dipilih (putih)
-          unselectedLabelColor: Colors
-              .white70, // Warna text saat tidak dipilih (putih transparan)
+          labelColor: theme.surface,
+          unselectedLabelColor: theme.surface.withOpacity(0.7),
           labelStyle: const TextStyle(
             fontSize: 16,
-            fontWeight: FontWeight.bold, // Bold saat dipilih
+            fontWeight: FontWeight.bold,
           ),
           unselectedLabelStyle: const TextStyle(
             fontSize: 14,
-            fontWeight: FontWeight.normal, // Normal saat tidak dipilih
+            fontWeight: FontWeight.normal,
           ),
-          indicatorColor: Colors.white, // Garis indikator putih
-          indicatorWeight: 3.0, // Garis indikator lebih tebal
+          indicatorColor: theme.surface,
+          indicatorWeight: 3.0,
           tabs: const [
             Tab(text: 'Browse'),
             Tab(text: 'My Listings'),
@@ -646,18 +467,13 @@ class _MarketplacePageState extends State<MarketplacePage>
         controller: _tabController,
         children: [_buildBrowseTab(), _buildMyListingsTab()],
       ),
-      floatingActionButton: ScaleFadeIn(
-        child: FloatingActionButton.extended(
-          onPressed: _showPublishDialog,
-          icon: const Icon(PhosphorIcons.plus),
-          label: const Text('Publish'),
-          elevation: 4,
-        ),
-      ),
     );
   }
 
   Widget _buildBrowseTab() {
+    // Use ThemeManager
+    final theme = ThemeManager.of(context);
+
     return Column(
       children: [
         // Search bar
@@ -667,13 +483,28 @@ class _MarketplacePageState extends State<MarketplacePage>
             controller: _searchController,
             decoration: InputDecoration(
               hintText: 'Search artworks...',
-              prefixIcon: const Icon(PhosphorIcons.magnifying_glass),
+              hintStyle: TextStyle(color: theme.textSecondary),
+              prefixIcon: Icon(
+                PhosphorIcons.magnifying_glass,
+                color: theme.textSecondary,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30),
+                borderSide: BorderSide(color: theme.surfaceVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: BorderSide(color: theme.surfaceVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: BorderSide(color: theme.primary),
               ),
               filled: true,
-              fillColor: Colors.grey[100],
+              fillColor: theme.surfaceVariant,
             ),
+            style: TextStyle(color: theme.textPrimary),
+            cursorColor: theme.primary,
             onChanged: (value) {
               setState(() => searchQuery = value);
             },
@@ -728,6 +559,17 @@ class _MarketplacePageState extends State<MarketplacePage>
           }
 
           if (snapshot.hasError) {
+            final bool isDark = Theme.of(context).brightness == Brightness.dark;
+            final Color textPrimaryColor = isDark
+                ? AppColors.darkTextPrimary
+                : AppColors.lightTextPrimary;
+            final Color textTertiaryColor = isDark
+                ? AppColors.darkTextSecondary
+                : AppColors.lightTextTertiary;
+            final Color warningColor = isDark
+                ? AppColors.darkWarning
+                : AppColors.lightWarning;
+
             return ListView(
               children: [
                 SizedBox(
@@ -738,24 +580,25 @@ class _MarketplacePageState extends State<MarketplacePage>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
+                          Icon(
                             PhosphorIcons.warning_circle,
                             size: 64,
-                            color: Colors.orange,
+                            color: warningColor,
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Failed to load listings',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: textPrimaryColor,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             '${snapshot.error}',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600]),
+                            style: TextStyle(color: textTertiaryColor),
                           ),
                           const SizedBox(height: 24),
                           ElevatedButton.icon(
@@ -764,10 +607,13 @@ class _MarketplacePageState extends State<MarketplacePage>
                             label: const Text('Retry'),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             '💡 Pull down to refresh\n• Check internet connection\n• Deploy Firestore indexes',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: textTertiaryColor,
+                            ),
                           ),
                         ],
                       ),
@@ -865,6 +711,17 @@ class _MarketplacePageState extends State<MarketplacePage>
           }
 
           if (snapshot.hasError) {
+            final bool isDark = Theme.of(context).brightness == Brightness.dark;
+            final Color textPrimaryColor = isDark
+                ? AppColors.darkTextPrimary
+                : AppColors.lightTextPrimary;
+            final Color textTertiaryColor = isDark
+                ? AppColors.darkTextSecondary
+                : AppColors.lightTextTertiary;
+            final Color warningColor = isDark
+                ? AppColors.darkWarning
+                : AppColors.lightWarning;
+
             return ListView(
               children: [
                 SizedBox(
@@ -875,24 +732,25 @@ class _MarketplacePageState extends State<MarketplacePage>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
+                          Icon(
                             PhosphorIcons.warning_circle,
                             size: 64,
-                            color: Colors.orange,
+                            color: warningColor,
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Failed to load your listings',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: textPrimaryColor,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             '${snapshot.error}',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600]),
+                            style: TextStyle(color: textTertiaryColor),
                           ),
                           const SizedBox(height: 24),
                           ElevatedButton.icon(
@@ -921,11 +779,6 @@ class _MarketplacePageState extends State<MarketplacePage>
                     title: 'You haven\'t published any listings yet',
                     subtitle:
                         'Share your artwork with the world and start earning!',
-                    action: ElevatedButton.icon(
-                      onPressed: _showPublishDialog,
-                      icon: const Icon(PhosphorIcons.plus),
-                      label: const Text('Publish Your First Listing'),
-                    ),
                   ),
                 ),
               ],
@@ -954,100 +807,167 @@ class _MarketplacePageState extends State<MarketplacePage>
   }
 
   Widget _buildListingCard(StoreListing listing, {bool showStatus = false}) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _showListingDetails(listing),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Thumbnail
-            Expanded(
-              flex: 3,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    color: Colors.grey[200],
-                    child: listing.thumbnailBase64 != null
-                        ? Image.memory(
-                            base64Decode(listing.thumbnailBase64!),
-                            fit: BoxFit.cover,
-                          )
-                        : const Icon(PhosphorIcons.image, size: 48),
+    return Builder(
+      builder: (context) {
+        final bool isDark = Theme.of(context).brightness == Brightness.dark;
+        final Color textTertiaryColor = isDark
+            ? AppColors.darkTextSecondary
+            : AppColors.lightTextTertiary;
+        final Color successColor = isDark
+            ? AppColors.darkSuccess
+            : AppColors.success;
+        final Color surfaceColor = isDark
+            ? AppColors.darkSurface
+            : AppColors.lightSurface;
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          elevation: 6,
+          shadowColor: isDark ? AppColors.darkShadow : AppColors.lightShadow,
+          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: InkWell(
+            onTap: () => _showListingDetails(listing),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Thumbnail
+                Expanded(
+                  flex: 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? AppColors.darkSurfaceVariant
+                              : AppColors.lightSurfaceVariant,
+                        ),
+                        child: listing.thumbnailBase64 != null
+                            ? Image.memory(
+                                base64Decode(listing.thumbnailBase64!),
+                                fit: BoxFit.cover,
+                              )
+                            : const Icon(PhosphorIcons.image, size: 64),
+                      ),
+                      if (showStatus && !listing.isActive)
+                        Container(
+                          color: AppColors.semiBlack,
+                          child: Center(
+                            child: Text(
+                              'INACTIVE',
+                              style: TextStyle(
+                                color: surfaceColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  if (showStatus && !listing.isActive)
-                    Container(
-                      color: Colors.black54,
-                      child: const Center(
-                        child: Text(
-                          'INACTIVE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            // Info
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      listing.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const Spacer(),
-                    Text(
-                      'Rp ${listing.price.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
+                ),
+                // Info
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          PhosphorIcons.star_fill,
-                          size: 12,
-                          color: Colors.amber,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${listing.averageRating.toStringAsFixed(1)}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${listing.totalSold} sold',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[600],
+                        Flexible(
+                          fit: FlexFit.tight,
+                          child: Text(
+                            listing.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: isDark
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.lightTextPrimary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Rp ${listing.price.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: successColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(
+                              PhosphorIcons.star_fill,
+                              size: 12,
+                              color: AppColors.amber,
+                            ),
+                            const SizedBox(width: 2),
+                            Flexible(
+                              child: Text(
+                              '${listing.averageRating.toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: ThemeManager.of(context).textSecondary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '${listing.totalSold} sold',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: textTertiaryColor,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // Creator name
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.user,
+                              size: 11,
+                              color: textTertiaryColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                listing.ownerName,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: textTertiaryColor,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1080,10 +1000,10 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         title: Text(widget.title),
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.darkSurface,
         actions: [
           IconButton(
             icon: const Icon(PhosphorIcons.magnifying_glass_minus),

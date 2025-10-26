@@ -71,12 +71,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   // Real-time collaboration
   List<String> activeCollaborators = []; // List of user IDs currently editing
   Map<String, DateTime> collaboratorPresence = {}; // Track last activity
+  StreamSubscription<List<mvp.Layer>>?
+  _layerSubscription; // Real-time layer listener
+  bool _isLoadingRemoteChanges = false; // Prevent feedback loop
+  bool _isUserDrawing = false; // Track if user is actively drawing
+  DateTime? _lastSaveTime; // Track when we last saved
+  int _lastKnownStrokeCount = 0; // Track stroke count to detect real changes
+  Timer? _reloadDebounceTimer; // Debounce reload to prevent rapid fire
 
   // Loading states
   bool isLoading = true;
   bool isSaving = false;
 
-  // Incremental save optimization  
+  // Incremental save optimization
   List<Map<String, dynamic>>? _lastSavedStrokes;
 
   // User
@@ -96,7 +103,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
   // Canvas rotation
   double canvasRotation = 0.0; // Rotation angle in degrees (0, 90, 180, 270)
-  
+
   // ✅ Gesture rotation for 2-finger rotate
   double gestureRotation = 0.0; // Free rotation angle from gesture (in radians)
   double lastGestureRotation = 0.0; // Track last rotation value
@@ -113,7 +120,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
   // Layer multi-select state
   bool isMultiSelectMode = false;
-  Set<String> selectedLayersForMerge = {}; // Changed from Set<int> to Set<String> (use layer IDs)
+  Set<String> selectedLayersForMerge =
+      {}; // Changed from Set<int> to Set<String> (use layer IDs)
 
   // Paint settings
   Paint shapePaint = Paint()
@@ -182,13 +190,21 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   /// Called when canvas changes - auto save with debounce
   Timer? _saveDebounceTimer;
   void _onCanvasChanged() {
+    // Mark that user is actively drawing
+    _isUserDrawing = true;
+    
     // Cancel previous timer
     _saveDebounceTimer?.cancel();
 
-    // Schedule save after 1 second of inactivity (reduced from 2s for better UX)
-    _saveDebounceTimer = Timer(const Duration(seconds: 1), () {
+    // 🚀 OPTIMIZED: 300ms delay for instant collaboration (was 1s)
+    // For shared projects, save more frequently to reduce latency
+    final saveDuration = widget.isShared 
+        ? const Duration(milliseconds: 1500) // Balanced: responsive but safe
+        : const Duration(seconds: 2); // Normal delay for private projects
+    
+    _saveDebounceTimer = Timer(saveDuration, () {
       if (mounted && currentProject != null && layers.isNotEmpty) {
-        print('🔄 Auto-saving canvas changes...');
+        print('� Auto-saving canvas changes (${widget.isShared ? "instant mode" : "normal mode"})...');
         _saveCurrentLayer();
       }
     });
@@ -197,6 +213,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   @override
   void dispose() {
     _saveDebounceTimer?.cancel();
+    _reloadDebounceTimer?.cancel(); // Cancel reload debounce timer
+    _layerSubscription?.cancel(); // Cancel real-time listener
     controller.removeListener(_onCanvasChanged);
     controller.dispose();
     transformationController.dispose();
@@ -232,6 +250,17 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       throw Exception('Project not found');
     }
 
+    // 🔒 SECURITY: Check if project has room code - must be accessed via join
+    if (project.roomCode != null && project.roomCode!.isNotEmpty) {
+      // If accessing via collaboration mode (isShared=true), allow it
+      // This means user joined via room code
+      if (!widget.isShared) {
+        throw Exception(
+          'This project is in collaboration mode. Please use "Join Collaboration" with room code: ${project.roomCode}'
+        );
+      }
+    }
+
     // Check access permission
     if (widget.isShared && !project.hasAccess(currentUserId)) {
       throw Exception('You do not have access to this project');
@@ -265,40 +294,133 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Start real-time streaming for shared project layers
+  /// 🚀 OPTIMIZED: WebSocket-like real-time collaboration with instant updates
   void _startLayerStreaming(String projectId) {
-    layerRepo.streamSharedLayers(projectId).listen((updatedLayers) {
-      // Check if we have real updates
-      bool hasChanges = false;
-      
-      if (layers.length != updatedLayers.length) {
-        hasChanges = true;
-      } else {
-        // Check if current layer strokes have changed
-        for (int i = 0; i < layers.length; i++) {
-          if (layers[i].strokes.length != updatedLayers[i].strokes.length) {
-            hasChanges = true;
-            break;
-          }
-        }
-      }
+    _layerSubscription = layerRepo
+        .streamSharedLayers(projectId)
+        .listen(
+          (updatedLayers) {
+            // 🚫 Skip if saving or loading (prevent feedback loop)
+            if (isSaving || _isLoadingRemoteChanges) {
+              print('⏭️ Skipping update (operation in progress)');
+              return;
+            }
 
-      if (hasChanges) {
-        print('🔄 Real-time update: Layers changed, reloading canvas...');
-        
-        setState(() {
-          layers = updatedLayers;
-          // Ensure selected index is valid
-          if (selectedLayerIndex >= layers.length) {
-            selectedLayerIndex = layers.isEmpty ? 0 : layers.length - 1;
-          }
-        });
+            // 🚫 Skip if user is actively drawing (prevent disruption)
+            if (_isUserDrawing) {
+              print('⏭️ Skipping update (user is actively drawing)');
+              return;
+            }
 
-        // Reload canvas with updated layer data (REAL-TIME COLLABORATION)
-        if (layers.isNotEmpty && selectedLayerIndex < layers.length) {
-          _loadLayerToCanvas(layers[selectedLayerIndex]);
-        }
-      }
-    });
+            // 🛡️ CRITICAL: Cancel any pending reload to prevent rapid-fire updates
+            _reloadDebounceTimer?.cancel();
+
+            // Check if we have real updates
+            bool hasChanges = false;
+            bool isCurrentLayerChanged = false;
+            bool isEditedByOthers = false;
+
+            if (layers.length != updatedLayers.length) {
+              hasChanges = true;
+              print('📊 Layer count changed: ${layers.length} → ${updatedLayers.length}');
+            } else {
+              // Check if ANY layer has changed (for full sync)
+              for (int i = 0; i < layers.length; i++) {
+                final oldLayer = layers[i];
+                final newLayer = updatedLayers[i];
+                final oldStrokeCount = oldLayer.strokes.length;
+                final newStrokeCount = newLayer.strokes.length;
+                
+                // 🎯 PRIMARY CHECK: Compare stroke count (most reliable indicator of real changes)
+                if (oldStrokeCount != newStrokeCount) {
+                  hasChanges = true;
+                  
+                  // 🛡️ CRITICAL: Check if this is our own update
+                  if (_lastKnownStrokeCount == newStrokeCount) {
+                    print('⚪ Layer ${i + 1} stroke count matches our last save (${newStrokeCount}), skipping');
+                    continue; // This is our own change, skip it
+                  }
+                  
+                  // Smart detection: Check if this update happened right after our save
+                  final updateTime = newLayer.updatedAt;
+                  
+                  if (_lastSaveTime != null) {
+                    final timeSinceOurSave = updateTime.difference(_lastSaveTime!).inMilliseconds;
+                    
+                    // If update happened within 5 seconds of our save, likely our own change
+                    if (timeSinceOurSave.abs() < 5000) {
+                      print('⚪ Layer ${i + 1} updated within 5s of our save (own change, skipping reload)');
+                      // This is likely our own change, don't mark as edited by others
+                      continue;
+                    }
+                  }
+                  
+                  // This is a real change from collaborator
+                  isEditedByOthers = true;
+                  print('👥 Layer ${i + 1} edited by collaborator (${oldStrokeCount} → ${newStrokeCount} strokes)');
+                  
+                  // Check if it's the currently selected layer
+                  if (i == selectedLayerIndex) {
+                    isCurrentLayerChanged = true;
+                  }
+                } else if (oldLayer.updatedAt != newLayer.updatedAt) {
+                  // Timestamp changed but stroke count same = metadata update only
+                  print('⚪ Layer ${i + 1} metadata updated (same stroke count: ${oldStrokeCount})');
+                  hasChanges = true; // Still sync the metadata
+                  // But don't mark as edited by others (no visual changes)
+                }
+              }
+            }
+
+            if (hasChanges) {
+              print('� Real-time update detected - applying changes...');
+
+              _isLoadingRemoteChanges = true;
+
+              setState(() {
+                layers = updatedLayers;
+                // Ensure selected index is valid
+                if (selectedLayerIndex >= layers.length) {
+                  selectedLayerIndex = layers.isEmpty ? 0 : layers.length - 1;
+                }
+              });
+
+              // SMART RELOAD: Only reload if current layer changed from others
+              if (isEditedByOthers && isCurrentLayerChanged && layers.isNotEmpty && selectedLayerIndex < layers.length) {
+                print('🔄 Scheduling canvas reload with collaborator changes...');
+                
+                // 🛡️ CRITICAL: Aggressive debouncing - only reload after 1 second of no updates
+                _reloadDebounceTimer = Timer(const Duration(milliseconds: 1000), () {
+                  // Triple-check before reload
+                  if (!_isUserDrawing && !isSaving && !_isLoadingRemoteChanges && mounted) {
+                    _isLoadingRemoteChanges = true;
+                    
+                    _loadLayerToCanvas(layers[selectedLayerIndex]).then((_) {
+                      _isLoadingRemoteChanges = false;
+                      // Update last known stroke count after reload
+                      _lastKnownStrokeCount = layers[selectedLayerIndex].strokes.length;
+                      print('✅ Canvas reloaded successfully (strokes: $_lastKnownStrokeCount)');
+                    }).catchError((error) {
+                      _isLoadingRemoteChanges = false;
+                      print('❌ Reload error: $error');
+                    });
+                  } else {
+                    print('⏭️ Reload cancelled (state changed during debounce)');
+                  }
+                });
+              } else {
+                print('✅ Layer state synced (no canvas reload needed)');
+              }
+            } else {
+              print('⚪ No real changes detected (skipping update)');
+            }
+          },
+          onError: (error) {
+            print('❌ Layer streaming error: $error');
+            _isLoadingRemoteChanges = false;
+            _reloadDebounceTimer?.cancel();
+          },
+        );
   }
 
   /// Track user presence in shared project
@@ -310,9 +432,20 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         !currentProject!.collaboratorIds.contains(currentUserId) &&
         !currentProject!.isOwner(currentUserId)) {
       try {
+        print('👥 Adding $currentUserId as collaborator...');
         await projectRepo.addCollaborator(projectId, currentUserId);
+        
+        // ✨ RELOAD PROJECT to get updated collaboratorIds
+        print('🔄 Reloading project to sync collaborator list...');
+        final freshProject = await projectRepo.getSharedProject(projectId);
+        if (freshProject != null) {
+          setState(() {
+            currentProject = freshProject;
+          });
+          print('✅ Project reloaded. Collaborators: ${freshProject.collaboratorIds}');
+        }
       } catch (e) {
-        print('Failed to add as collaborator: $e');
+        print('❌ Failed to add as collaborator: $e');
       }
     }
 
@@ -431,14 +564,14 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _saveCurrentLayer() async {
     if (currentProject == null || layers.isEmpty) return;
 
-    // Prevent concurrent saves
-    if (isSaving) {
-      print('⏳ Save already in progress, waiting...');
-      // Wait for current save to complete
+    // Prevent concurrent saves or loading remote changes
+    if (isSaving || _isLoadingRemoteChanges) {
+      print('⏳ Save already in progress or loading remote changes, waiting...');
+      // Wait for current operation to complete
       await Future.delayed(const Duration(milliseconds: 100));
-      if (isSaving) return; // Still saving, skip
+      if (isSaving || _isLoadingRemoteChanges) return; // Still busy, skip
     }
-    
+
     setState(() => isSaving = true);
 
     try {
@@ -449,7 +582,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       final strokeData = _convertDrawablesToStrokes();
 
       // OPTIMIZATION: Only save if data actually changed
-      if (_lastSavedStrokes != null && 
+      if (_lastSavedStrokes != null &&
           _strokesEqual(strokeData, _lastSavedStrokes!)) {
         print('ℹ️ No changes detected, skipping save');
         setState(() => isSaving = false);
@@ -462,6 +595,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       Map<String, dynamic> updateData = {
         'updatedAt': Timestamp.now(),
+        'lastEditedBy': currentUserId, // Track who made the change
+        // Store project permissions in layer for efficient Firestore rules check
+        'ownerId': currentProject!.ownerId,
+        'collaboratorIds': currentProject!.collaboratorIds,
       };
 
       // Use compressed or raw data
@@ -469,17 +606,17 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         // For large datasets, use compressed JSON string
         updateData['strokes'] = strokeData; // Firestore handles compression
         updateData['strokeCount'] = dataSize;
-        print('📦 Saving $dataSize strokes (large dataset)');
+        print('📦 Saving $dataSize strokes (large dataset) by $currentUserId');
       } else {
         updateData['strokes'] = strokeData;
-        print('💾 Saving $dataSize strokes');
+        print('💾 Saving $dataSize strokes by $currentUserId');
       }
 
       // Update layer in Firestore with batch write for better performance
       if (widget.isShared) {
         await layerRepo.updateSharedLayer(
-          currentProject!.id, 
-          currentLayer.id, 
+          currentProject!.id,
+          currentLayer.id,
           updateData,
         );
       } else {
@@ -493,6 +630,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Update tracking state (untuk future optimizations)
       _lastSavedStrokes = List.from(strokeData);
+      _lastSaveTime = DateTime.now(); // Track save time
+      _lastKnownStrokeCount = strokeData.length; // Track stroke count for reload comparison
 
       // Auto-generate thumbnail if there's content (async, don't await)
       if (strokeData.isNotEmpty) {
@@ -501,6 +640,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Save completed
       print('✅ Layer saved: ${currentLayer.name} ($dataSize strokes)');
+      
+      // User finished drawing (save completed)
+      _isUserDrawing = false;
     } catch (e) {
       print('❌ Save failed: $e');
       _showError('Failed to save: $e');
@@ -510,16 +652,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Compare two stroke arrays for equality (shallow comparison)
-  bool _strokesEqual(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+  bool _strokesEqual(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
     if (a.length != b.length) return false;
-    
+
     // Quick check: compare lengths and last few strokes
     if (a.isEmpty) return true;
-    
+
     // Compare first and last strokes as heuristic
     if (a.first.toString() != b.first.toString()) return false;
     if (a.last.toString() != b.last.toString()) return false;
-    
+
     return true;
   }
 
@@ -527,36 +672,35 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   /// This ensures what you see = what you export
   Future<ui.Image> _renderAllLayersToImage(Size size) async {
     print('🎨 Rendering all layers to image...');
-    
+
     // Create a picture recorder to draw all layers
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
     // 1. Draw background color
     final bgPaint = Paint()..color = canvasBackgroundColor;
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      bgPaint,
-    );
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
 
     // 2. Apply canvas transformations (rotation and mirror)
     // Save canvas state before transforming
     canvas.save();
-    
+
     // Translate to center for rotation/mirror
     canvas.translate(size.width / 2, size.height / 2);
-    
+
     // Apply rotation
     if (canvasRotation != 0) {
-      canvas.rotate(canvasRotation * 3.14159 / 180); // Convert degrees to radians
+      canvas.rotate(
+        canvasRotation * 3.14159 / 180,
+      ); // Convert degrees to radians
     }
-    
+
     // Apply mirror
     canvas.scale(
       isMirrorHorizontal ? -1.0 : 1.0,
       isMirrorVertical ? -1.0 : 1.0,
     );
-    
+
     // Translate back
     canvas.translate(-size.width / 2, -size.height / 2);
 
@@ -565,20 +709,21 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       ..sort((a, b) => a.zIndex.compareTo(b.zIndex));
 
     int totalStrokesRendered = 0;
-    
+
     for (int i = 0; i < sortedLayers.length; i++) {
       final layer = sortedLayers[i];
       if (!layer.isVisible) continue;
 
       // ✅ FIX: Jika ini adalah layer yang sedang aktif, render drawable dari controller juga
-      final isCurrentLayer = (selectedLayerIndex < layers.length && 
-                              layers[selectedLayerIndex].id == layer.id);
-      
+      final isCurrentLayer =
+          (selectedLayerIndex < layers.length &&
+          layers[selectedLayerIndex].id == layer.id);
+
       // Draw saved strokes from layer
       for (final strokeData in layer.strokes) {
         try {
           final drawableType = strokeData['drawableType'] as String?;
-          
+
           if (drawableType == 'freeStyle') {
             // Render free-hand stroke
             final points = strokeData['points'] as List<dynamic>? ?? [];
@@ -598,7 +743,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             }
 
             final color = strokeData['color'] as int? ?? 0xFF000000;
-            final strokeWidth = (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
+            final strokeWidth =
+                (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
 
             final strokePaint = Paint()
               ..color = Color(color).withOpacity(layer.opacity)
@@ -618,7 +764,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             );
             final fontSize = (strokeData['fontSize'] as num?)?.toDouble() ?? 18;
             final color = Color(strokeData['color'] as int? ?? 0xFF000000);
-            final fontWeight = FontWeight.values[strokeData['fontWeight'] as int? ?? FontWeight.normal.index];
+            final fontWeight =
+                FontWeight.values[strokeData['fontWeight'] as int? ??
+                    FontWeight.normal.index];
 
             // Render text with stroke outline for better contrast
             _renderTextWithStroke(
@@ -633,8 +781,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           } else if (drawableType == 'shape') {
             // Render shape
             final color = Color(strokeData['color'] as int? ?? 0xFF000000);
-            final strokeWidth = (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
-            final paintStyle = PaintingStyle.values[strokeData['style'] as int? ?? 1];
+            final strokeWidth =
+                (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
+            final paintStyle =
+                PaintingStyle.values[strokeData['style'] as int? ?? 1];
             final position = Offset(
               (strokeData['position']['x'] as num).toDouble(),
               (strokeData['position']['y'] as num).toDouble(),
@@ -644,8 +794,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
               ..color = color.withOpacity(layer.opacity)
               ..strokeWidth = strokeWidth
               ..style = paintStyle
-              ..strokeCap = StrokeCap.values[strokeData['strokeCap'] as int? ?? StrokeCap.round.index]
-              ..strokeJoin = StrokeJoin.values[strokeData['strokeJoin'] as int? ?? StrokeJoin.round.index];
+              ..strokeCap =
+                  StrokeCap.values[strokeData['strokeCap'] as int? ??
+                      StrokeCap.round.index]
+              ..strokeJoin =
+                  StrokeJoin.values[strokeData['strokeJoin'] as int? ??
+                      StrokeJoin.round.index];
 
             // For now, draw a simple marker at position
             // Full shape recreation would require shape factory
@@ -657,11 +811,13 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           continue;
         }
       }
-      
+
       // ✅ RENDER CURRENT UNSAVED DRAWABLES (dari controller)
       if (isCurrentLayer && controller.value.drawables.isNotEmpty) {
-        print('🎨 Rendering ${controller.value.drawables.length} unsaved drawables from current layer...');
-        
+        print(
+          '🎨 Rendering ${controller.value.drawables.length} unsaved drawables from current layer...',
+        );
+
         for (final drawable in controller.value.drawables) {
           try {
             if (drawable is FreeStyleDrawable) {
@@ -692,7 +848,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 text: drawable.text,
                 position: drawable.position,
                 fontSize: drawable.style.fontSize ?? 18,
-                color: (drawable.style.color ?? Colors.black).withOpacity(layer.opacity),
+                color: (drawable.style.color ?? Colors.black).withOpacity(
+                  layer.opacity,
+                ),
                 fontWeight: drawable.style.fontWeight ?? FontWeight.normal,
               );
               totalStrokesRendered++;
@@ -706,7 +864,11 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 ..strokeJoin = drawable.paint.strokeJoin;
 
               // Simple circle marker for shapes
-              canvas.drawCircle(drawable.position, drawable.paint.strokeWidth * 2, shapePaint);
+              canvas.drawCircle(
+                drawable.position,
+                drawable.paint.strokeWidth * 2,
+                shapePaint,
+              );
               totalStrokesRendered++;
             }
           } catch (e) {
@@ -720,8 +882,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     // Restore canvas state after transformations
     canvas.restore();
 
-    print('✅ Rendered $totalStrokesRendered strokes from ${sortedLayers.length} layers (including unsaved)');
-    print('   Rotation: $canvasRotation°, Mirror H: $isMirrorHorizontal, Mirror V: $isMirrorVertical');
+    print(
+      '✅ Rendered $totalStrokesRendered strokes from ${sortedLayers.length} layers (including unsaved)',
+    );
+    print(
+      '   Rotation: $canvasRotation°, Mirror H: $isMirrorHorizontal, Mirror V: $isMirrorVertical',
+    );
 
     // 4. Convert to image
     final picture = recorder.endRecording();
@@ -736,7 +902,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   /// Render single layer to image for background display
   Future<ui.Image?> _renderLayerToImage(mvp.Layer layer, Size size) async {
     if (layer.strokes.isEmpty) return null;
-    
+
     try {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -745,7 +911,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       for (final strokeData in layer.strokes) {
         try {
           final drawableType = strokeData['drawableType'] as String?;
-          
+
           if (drawableType == 'freeStyle') {
             // Render free-hand stroke
             final points = strokeData['points'] as List<dynamic>? ?? [];
@@ -765,7 +931,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             }
 
             final color = strokeData['color'] as int? ?? 0xFF000000;
-            final strokeWidth = (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
+            final strokeWidth =
+                (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
 
             final strokePaint = Paint()
               ..color = Color(color).withOpacity(layer.opacity)
@@ -779,7 +946,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             // Render text WITH STROKE OUTLINE
             final text = strokeData['text'] as String? ?? '';
             final color = Color(strokeData['color'] as int? ?? 0xFF000000);
-            final fontSize = (strokeData['fontSize'] as num?)?.toDouble() ?? 18.0;
+            final fontSize =
+                (strokeData['fontSize'] as num?)?.toDouble() ?? 18.0;
             final position = Offset(
               (strokeData['position']['x'] as num).toDouble(),
               (strokeData['position']['y'] as num).toDouble(),
@@ -796,7 +964,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           } else if (drawableType == 'shape') {
             // Render shape
             final color = Color(strokeData['color'] as int? ?? 0xFF000000);
-            final strokeWidth = (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
+            final strokeWidth =
+                (strokeData['strokeWidth'] as num?)?.toDouble() ?? 2.0;
             final position = Offset(
               (strokeData['position']['x'] as num).toDouble(),
               (strokeData['position']['y'] as num).toDouble(),
@@ -867,7 +1036,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _autoGenerateThumbnail() async {
     try {
       print('📸 Auto-generating thumbnail from all layers...');
-      
+
       final canvasSize = Size(
         currentProject!.canvasWidth.toDouble(),
         currentProject!.canvasHeight.toDouble(),
@@ -948,17 +1117,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           strokeMap['style'] = drawable.paint.style.index; // 0=fill, 1=stroke
           strokeMap['strokeCap'] = drawable.paint.strokeCap.index;
           strokeMap['strokeJoin'] = drawable.paint.strokeJoin.index;
-          
+
           // Save shape type
           strokeMap['shapeType'] = drawable.runtimeType.toString();
-          
+
           // Save position
           strokeMap['position'] = {
             'x': drawable.position.dx,
             'y': drawable.position.dy,
           };
 
-          print('  🔷 Shape: ${drawable.runtimeType} at (${drawable.position.dx.toStringAsFixed(1)}, ${drawable.position.dy.toStringAsFixed(1)})');
+          print(
+            '  🔷 Shape: ${drawable.runtimeType} at (${drawable.position.dx.toStringAsFixed(1)}, ${drawable.position.dy.toStringAsFixed(1)})',
+          );
         }
 
         strokeData.add(strokeMap);
@@ -980,7 +1151,33 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
     print('🔄 Loading ${strokes.length} strokes to canvas...');
 
-    // Clear current drawables first
+    // 🔥 PRESERVE ACTIVE DRAWING: Get current drawables before clearing
+    final currentDrawables = controller.value.drawables;
+    
+    // Double-check: If user is actively drawing, skip reload entirely
+    if (_isUserDrawing) {
+      print('[SKIP RELOAD] User is actively drawing - preventing canvas reload');
+      return;
+    }
+    
+    // Calculate how many strokes were previously saved
+    // We'll preserve any strokes beyond the saved count (actively being drawn)
+    final previouslySavedCount = _lastSavedStrokes?.length ?? 0;
+    
+    // Identify which drawables are NEW (not yet saved to Firestore)
+    // These are strokes the user is actively drawing or just completed
+    final unsavedDrawables = currentDrawables.length > previouslySavedCount
+        ? currentDrawables.sublist(previouslySavedCount)
+        : <Drawable>[];
+    
+    if (unsavedDrawables.isNotEmpty) {
+      print('[PRESERVE] Found ${unsavedDrawables.length} unsaved strokes (user is actively drawing)');
+      // Don't reload if user is actively drawing to prevent disruption
+      print('[SKIP RELOAD] User is drawing - keeping canvas as-is to prevent data loss');
+      return;
+    }
+
+    // Clear current drawables only if safe to do so
     controller.clearDrawables();
 
     // Build list of drawables to add
@@ -1050,13 +1247,20 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     }
 
     // Add all drawables at once by replacing the controller's value
-    if (drawablesToAdd.isNotEmpty) {
-      // Create new PainterController value with loaded drawables
-      final newValue = controller.value.copyWith(drawables: drawablesToAdd);
+    if (drawablesToAdd.isNotEmpty || unsavedDrawables.isNotEmpty) {
+      // Combine loaded strokes + unsaved strokes
+      final allDrawables = [...drawablesToAdd, ...unsavedDrawables];
+      
+      // Create new PainterController value with all drawables
+      final newValue = controller.value.copyWith(drawables: allDrawables);
       controller.value = newValue;
+      
+      if (unsavedDrawables.isNotEmpty) {
+        print('[RESTORED] ${unsavedDrawables.length} unsaved strokes preserved');
+      }
     }
 
-    print('✅ Loaded ${drawablesToAdd.length} strokes to canvas');
+    print('✅ Loaded ${drawablesToAdd.length} saved + ${unsavedDrawables.length} unsaved strokes to canvas');
 
     // Refresh canvas
     if (mounted) {
@@ -1095,6 +1299,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         layerId = await layerRepo.createSharedLayer(
           currentProject!.id,
           newLayer,
+          ownerId: currentProject!.ownerId,
+          collaboratorIds: currentProject!.collaboratorIds,
         );
       } else {
         print('Creating private layer...');
@@ -1114,10 +1320,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       });
 
       controller.clearDrawables();
-      
+
       // Update layer images to include the new layer rendering
       await _updateLayerImages();
-      
+
       _showSuccess('New layer "${newLayer.name}" added');
     } catch (e, stackTrace) {
       print('❌ Error adding layer: $e');
@@ -1175,7 +1381,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       setState(() {
         layers.removeAt(selectedLayerIndex);
-        
+
         // Adjust selected index - ensure it's within valid range
         if (layers.isEmpty) {
           // Should not happen due to check above, but just in case
@@ -1188,7 +1394,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         for (int i = 0; i < layers.length; i++) {
           layers[i] = layers[i].copyWith(zIndex: layers.length - i);
         }
-        
+
         // Clear deleted layer image cache
         layerImages.remove(layerToDelete.id);
       });
@@ -1197,11 +1403,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       try {
         for (final layer in layers) {
           if (widget.isShared) {
-            await layerRepo.updateSharedLayer(
-              currentProject!.id,
-              layer.id,
-              {'zIndex': layer.zIndex},
-            );
+            await layerRepo.updateSharedLayer(currentProject!.id, layer.id, {
+              'zIndex': layer.zIndex,
+            });
           } else {
             await layerRepo.updatePrivateLayer(
               currentUserId,
@@ -1217,10 +1421,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       }
 
       // Only load layer if layers is not empty
-      if (layers.isNotEmpty && selectedLayerIndex >= 0 && selectedLayerIndex < layers.length) {
+      if (layers.isNotEmpty &&
+          selectedLayerIndex >= 0 &&
+          selectedLayerIndex < layers.length) {
         await _loadLayerToCanvas(layers[selectedLayerIndex]);
       }
-      
+
       _showSuccess('Layer deleted successfully');
     } catch (e) {
       _showError('Failed to delete layer: $e');
@@ -1230,14 +1436,23 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   /// Rename layer
   Future<void> _renameLayer(int index) async {
     if (currentProject == null || index < 0 || index >= layers.length) return;
-    
+
     final layer = layers[index];
     final controller = TextEditingController(text: layer.name);
-    
+
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Layer'),
+        title: Text('Rename Layer', style: TextStyle(color: textPrimaryColor)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -1256,7 +1471,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: textSecondaryColor)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1270,21 +1485,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         ],
       ),
     );
-    
+
     if (newName != null && newName != layer.name) {
       try {
         // Update layer name in state
         setState(() {
           layers[index] = layers[index].copyWith(name: newName);
         });
-        
+
         // Update in Firestore
         if (widget.isShared) {
-          await layerRepo.updateSharedLayer(
-            currentProject!.id,
-            layer.id,
-            {'name': newName},
-          );
+          await layerRepo.updateSharedLayer(currentProject!.id, layer.id, {
+            'name': newName,
+          });
         } else {
           await layerRepo.updatePrivateLayer(
             currentUserId,
@@ -1293,7 +1506,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             {'name': newName},
           );
         }
-        
+
         _showSuccess('Layer renamed to "$newName"');
       } catch (e) {
         _showError('Failed to rename layer: $e');
@@ -1338,7 +1551,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       setState(() {
         layers.removeAt(index);
-        
+
         // Adjust selected index if needed
         if (index < selectedLayerIndex) {
           selectedLayerIndex--;
@@ -1350,7 +1563,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             selectedLayerIndex = 0;
           }
         }
-        
+
         // Ensure selectedLayerIndex is within valid range
         if (layers.isEmpty) {
           selectedLayerIndex = 0;
@@ -1362,7 +1575,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         for (int i = 0; i < layers.length; i++) {
           layers[i] = layers[i].copyWith(zIndex: layers.length - i);
         }
-        
+
         // Clear deleted layer image cache
         layerImages.remove(layerToDelete.id);
       });
@@ -1389,7 +1602,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       }
 
       // Load the newly selected layer to canvas
-      if (layers.isNotEmpty && selectedLayerIndex >= 0 && selectedLayerIndex < layers.length) {
+      if (layers.isNotEmpty &&
+          selectedLayerIndex >= 0 &&
+          selectedLayerIndex < layers.length) {
         await _loadLayerToCanvas(layers[selectedLayerIndex]);
       }
 
@@ -1459,7 +1674,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           layerIndices.add(index);
         }
       }
-      
+
       if (layerIndices.length < 2) {
         _showError('Please select at least 2 valid layers to merge');
         return;
@@ -1494,7 +1709,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Add merged layer to Firestore
       final mergedLayerId = widget.isShared
-          ? await layerRepo.createSharedLayer(currentProject!.id, mergedLayer)
+          ? await layerRepo.createSharedLayer(
+              currentProject!.id,
+              mergedLayer,
+              ownerId: currentProject!.ownerId,
+              collaboratorIds: currentProject!.collaboratorIds,
+            )
           : await layerRepo.createPrivateLayer(
               currentUserId,
               currentProject!.id,
@@ -1545,6 +1765,24 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
   /// Show layer panel
   void _showLayerPanel() {
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color surfaceColor = isDark
+        ? AppColors.darkSurface
+        : AppColors.lightSurface;
+    final Color primaryColor = isDark
+        ? AppColors.darkAccent
+        : AppColors.primary1;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+    final Color dividerColor = isDark
+        ? AppColors.darkSurfaceVariant
+        : AppColors.lightSurfaceVariant;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1555,7 +1793,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         maxChildSize: 0.9,
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: surfaceColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             boxShadow: [
               BoxShadow(
@@ -1574,7 +1812,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: dividerColor,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1586,9 +1824,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                     isMultiSelectMode
                         ? 'Select Layers (${selectedLayersForMerge.length})'
                         : 'Layers (${layers.length})',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
+                      color: textPrimaryColor,
                     ),
                   ),
                   Row(
@@ -1631,7 +1870,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                               selectedLayersForMerge.clear();
                             });
                           },
-                          child: const Text('Cancel'),
+                          child: Text(
+                            'Cancel',
+                            style: TextStyle(color: textSecondaryColor),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         // Merge button - DISABLED
@@ -1662,33 +1904,48 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 ],
               ),
               // ✅ Coming Soon Banner
-              Container(
-                margin: const EdgeInsets.only(top: 8, bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  border: Border.all(color: Colors.orange.shade200),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 20,
-                      color: Colors.orange.shade700,
+              Builder(
+                builder: (context) {
+                  final bool isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  final Color warningBg = isDark
+                      ? AppColors.darkWarning.withOpacity(0.1)
+                      : AppColors.lightWarning.withOpacity(0.1);
+                  final Color warningBorder = isDark
+                      ? AppColors.darkWarning.withOpacity(0.3)
+                      : AppColors.lightWarning.withOpacity(0.3);
+                  final Color warningIcon = isDark
+                      ? AppColors.darkWarning
+                      : AppColors.warning;
+                  final Color warningText = isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary;
+
+                  return Container(
+                    margin: const EdgeInsets.only(top: 8, bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Multi-layer features (Add, Delete, Merge) coming soon! Currently using single layer mode.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange.shade900,
+                    decoration: BoxDecoration(
+                      color: warningBg,
+                      border: Border.all(color: warningBorder),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20, color: warningIcon),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Multi-layer features (Add, Delete, Merge) coming soon! Currently using single layer mode.',
+                            style: TextStyle(fontSize: 12, color: warningText),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
               const Divider(),
               // Layers list
@@ -1701,14 +1958,14 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             Icon(
                               PhosphorIcons.stack,
                               size: 64,
-                              color: Colors.grey.shade400,
+                              color: textSecondaryColor,
                             ),
                             const SizedBox(height: 16),
                             Text(
                               'No layers yet',
                               style: TextStyle(
                                 fontSize: 16,
-                                color: Colors.grey.shade600,
+                                color: textSecondaryColor,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -1716,8 +1973,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                               icon: const Icon(PhosphorIcons.plus),
                               label: const Text('Add Layer'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
+                                backgroundColor: primaryColor,
+                                foregroundColor: surfaceColor,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 24,
                                   vertical: 12,
@@ -1736,7 +1993,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                         onReorder: (oldIndex, newIndex) async {
                           // Save current layer before reordering
                           await _saveCurrentLayer();
-                          
+
                           setState(() {
                             if (newIndex > oldIndex) newIndex -= 1;
                             final item = layers.removeAt(oldIndex);
@@ -1828,7 +2085,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                                         onChanged: (val) {
                                           setState(() {
                                             if (val == true) {
-                                              selectedLayersForMerge.add(layer.id); // Use layer ID
+                                              selectedLayersForMerge.add(
+                                                layer.id,
+                                              ); // Use layer ID
                                             } else {
                                               selectedLayersForMerge.remove(
                                                 layer.id, // Use layer ID
@@ -1897,17 +2156,20 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                               trailing: isMultiSelectMode
                                   ? null
                                   : SizedBox(
-                                      width: 140, // Increased width for edit + delete buttons
+                                      width:
+                                          140, // Increased width for edit + delete buttons
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
                                         children: [
                                           if (isSelected)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 6,
-                                                vertical: 2,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: Colors.blue,
                                                 borderRadius:
@@ -1935,7 +2197,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                                               size: 16,
                                               color: Colors.blue,
                                             ),
-                                            tooltip: 'Rename layer (or double-tap layer name)',
+                                            tooltip:
+                                                'Rename layer (or double-tap layer name)',
                                             onPressed: () {
                                               _renameLayer(index);
                                             },
@@ -1947,10 +2210,11 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                                               opacity: 0.3,
                                               child: IconButton(
                                                 padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(
-                                                  minWidth: 32,
-                                                  minHeight: 32,
-                                                ),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 32,
+                                                      minHeight: 32,
+                                                    ),
                                                 icon: const Icon(
                                                   PhosphorIcons.trash,
                                                   size: 18,
@@ -1967,9 +2231,13 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                                   ? () {
                                       setState(() {
                                         if (isChecked) {
-                                          selectedLayersForMerge.remove(layer.id); // Use layer ID
+                                          selectedLayersForMerge.remove(
+                                            layer.id,
+                                          ); // Use layer ID
                                         } else {
-                                          selectedLayersForMerge.add(layer.id); // Use layer ID
+                                          selectedLayersForMerge.add(
+                                            layer.id,
+                                          ); // Use layer ID
                                         }
                                       });
                                     }
@@ -2019,11 +2287,25 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       final result = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) {
-          final titleController = TextEditingController(text: currentProject!.name);
+          final titleController = TextEditingController(
+            text: currentProject!.name,
+          );
           final priceController = TextEditingController();
-          
+
+          // Theme-aware colors
+          final bool isDark = Theme.of(context).brightness == Brightness.dark;
+          final Color textPrimaryColor = isDark
+              ? AppColors.darkTextPrimary
+              : AppColors.lightTextPrimary;
+          final Color textSecondaryColor = isDark
+              ? AppColors.darkTextSecondary
+              : AppColors.lightTextSecondary;
+
           return AlertDialog(
-            title: const Text('Sell to Marketplace'),
+            title: Text(
+              'Sell to Marketplace',
+              style: TextStyle(color: textPrimaryColor),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2049,7 +2331,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: textSecondaryColor),
+                ),
               ),
               ElevatedButton(
                 onPressed: () {
@@ -2085,15 +2370,14 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Save current state and generate thumbnail first
       await _saveCurrentLayer();
-      
+
       // Show loading
       if (mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(),
-          ),
+          builder: (context) =>
+              const Center(child: CircularProgressIndicator()),
         );
       }
 
@@ -2122,12 +2406,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Show success
       _showSuccess('✅ Published to marketplace!');
-      
+
       print('✅ Project published to marketplace: $title at Rp $price');
     } catch (e) {
       // Hide loading
       if (mounted) Navigator.of(context).pop();
-      
+
       print('❌ Sell to marketplace error: $e');
       _showError('Failed to publish: $e');
     }
@@ -2139,13 +2423,13 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       // Debug log
       print('🎨 Export canvas started...');
       print('Project: ${currentProject?.name}');
-      
+
       // ✅ SAVE ALL CHANGES: Save current layer AND update project
       print('💾 Saving all changes before export...');
-      
+
       // 1. Save current layer strokes
       await _saveCurrentLayer();
-      
+
       // 2. Generate and update project thumbnail
       final thumbnailSize = Size(400, 300); // Thumbnail size
       final thumbnailImage = await _renderAllLayersToImage(thumbnailSize);
@@ -2155,11 +2439,11 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       if (thumbnailBytes != null) {
         await _updateProjectThumbnail(thumbnailBytes.buffer.asUint8List());
       }
-      
+
       // Wait a moment for Firestore to update
       await Future.delayed(const Duration(milliseconds: 800));
       print('✅ All changes saved, total layers: ${layers.length}');
-      
+
       // Show loading indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2182,7 +2466,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           ),
         );
       }
-      
+
       print(
         'Canvas size: ${currentProject?.canvasWidth}x${currentProject?.canvasHeight}',
       );
@@ -2198,7 +2482,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       );
 
       print('Rendering with size: $size');
-      
+
       // Use unified rendering method (same as thumbnail and display)
       final ui.Image image = await _renderAllLayersToImage(size);
 
@@ -2302,38 +2586,65 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
-  /// Dialog untuk memilih cara export
+
   /// Dialog untuk memilih cara export
   Future<void> _showSaveShareDialog(Uint8List imageBytes) async {
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Export Canvas'),
+        title: Text('Export Canvas', style: TextStyle(color: textPrimaryColor)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(PhosphorIcons.floppy_disk),
-              title: const Text('Simpan ke Gallery'),
-              subtitle: const Text('Simpan ke folder Pictures/Muraloka'),
+              leading: Icon(PhosphorIcons.floppy_disk, color: textPrimaryColor),
+              title: Text(
+                'Simpan ke Gallery',
+                style: TextStyle(color: textPrimaryColor),
+              ),
+              subtitle: Text(
+                'Simpan ke folder Pictures/Muraloka',
+                style: TextStyle(color: textSecondaryColor),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _saveToGallery(imageBytes);
               },
             ),
             ListTile(
-              leading: const Icon(PhosphorIcons.folder),
-              title: const Text('Pilih Folder'),
-              subtitle: const Text('Pilih lokasi penyimpanan'),
+              leading: Icon(PhosphorIcons.folder, color: textPrimaryColor),
+              title: Text(
+                'Pilih Folder',
+                style: TextStyle(color: textPrimaryColor),
+              ),
+              subtitle: Text(
+                'Pilih lokasi penyimpanan',
+                style: TextStyle(color: textSecondaryColor),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _saveToCustomFolder(imageBytes);
               },
             ),
             ListTile(
-              leading: const Icon(PhosphorIcons.share_network),
-              title: const Text('Share'),
-              subtitle: const Text('Bagikan ke aplikasi lain'),
+              leading: Icon(
+                PhosphorIcons.share_network,
+                color: textPrimaryColor,
+              ),
+              title: Text('Share', style: TextStyle(color: textPrimaryColor)),
+              subtitle: Text(
+                'Bagikan ke aplikasi lain',
+                style: TextStyle(color: textSecondaryColor),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _shareImage(imageBytes);
@@ -2344,7 +2655,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+            child: Text('Batal', style: TextStyle(color: textSecondaryColor)),
           ),
         ],
       ),
@@ -2398,7 +2709,11 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       }
 
       // Update marketplace listing if exists
-      await _updateMarketplaceListing(currentProject!.id, null, thumbnailBase64);
+      await _updateMarketplaceListing(
+        currentProject!.id,
+        null,
+        thumbnailBase64,
+      );
 
       print('✅ Thumbnail updated successfully');
     } catch (e) {
@@ -2416,22 +2731,22 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     try {
       // Check if this project has marketplace listing
       final listings = await listingRepo.getListingsByProject(projectId);
-      
+
       if (listings.isNotEmpty) {
         // Update all listings for this project
         for (final listing in listings) {
           final updates = <String, dynamic>{};
-          
+
           if (newTitle != null) {
             updates['title'] = newTitle;
             print('📝 Updating marketplace title to: $newTitle');
           }
-          
+
           if (newThumbnail != null && newThumbnail.isNotEmpty) {
             updates['thumbnailBase64'] = newThumbnail;
             print('📸 Updating marketplace thumbnail');
           }
-          
+
           if (updates.isNotEmpty) {
             await listingRepo.updateListing(listing.id, updates);
             print('✅ Marketplace listing updated');
@@ -2665,8 +2980,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // ✅ IMPROVED: Better share text and subject
       final projectName = currentProject?.name ?? 'My Artwork';
-      final shareText = '🎨 Check out my artwork "$projectName" created with Muraloka!\n\nMuraloka - Digital Art Made Easy';
-      
+      final shareText =
+          '🎨 Check out my artwork "$projectName" created with Muraloka!\n\nMuraloka - Digital Art Made Easy';
+
       // Share with multiple apps support (WhatsApp, Instagram, Twitter, etc)
       print('📤 Initiating share...');
       final result = await Share.shareXFiles(
@@ -2679,7 +2995,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Show success message
       if (mounted) {
-        _showSuccess('Share dialog opened! Select your app (WhatsApp, Instagram, etc)');
+        _showSuccess(
+          'Share dialog opened! Select your app (WhatsApp, Instagram, etc)',
+        );
       }
     } catch (e, stackTrace) {
       print('❌ Share error: $e');
@@ -2702,14 +3020,29 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
     final emailController = TextEditingController();
 
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Invite Collaborator'),
+        title: Text(
+          'Invite Collaborator',
+          style: TextStyle(color: textPrimaryColor),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Enter collaborator\'s User ID:'),
+            Text(
+              'Enter collaborator\'s User ID:',
+              style: TextStyle(color: textPrimaryColor),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: emailController,
@@ -2719,16 +3052,16 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Note: The user must be registered in the system.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: textSecondaryColor),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: textSecondaryColor)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2769,40 +3102,64 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   void _showActiveCollaborators() {
     if (currentProject == null) return;
 
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+    final Color warningColor = isDark
+        ? AppColors.darkWarning
+        : AppColors.lightWarning;
+    final Color errorColor = isDark ? AppColors.darkError : AppColors.error;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Active Collaborators'),
+        title: Text(
+          'Active Collaborators',
+          style: TextStyle(color: textPrimaryColor),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(PhosphorIcons.crown, color: Colors.amber),
-              title: Text('Owner: ${currentProject!.ownerId}'),
+              leading: Icon(PhosphorIcons.crown, color: warningColor),
+              title: Text(
+                'Owner: ${currentProject!.ownerId}',
+                style: TextStyle(color: textPrimaryColor),
+              ),
               subtitle: currentProject!.ownerId == currentUserId
-                  ? const Text('You')
+                  ? Text('You', style: TextStyle(color: textSecondaryColor))
                   : null,
             ),
             const Divider(),
             if (currentProject!.collaboratorIds.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text('No collaborators yet'),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'No collaborators yet',
+                  style: TextStyle(color: textSecondaryColor),
+                ),
               )
             else
               ...currentProject!.collaboratorIds.map((collaboratorId) {
                 final isCurrentUser = collaboratorId == currentUserId;
                 return ListTile(
-                  leading: const Icon(PhosphorIcons.user),
-                  title: Text(collaboratorId),
-                  subtitle: isCurrentUser ? const Text('You') : null,
+                  leading: Icon(PhosphorIcons.user, color: textPrimaryColor),
+                  title: Text(
+                    collaboratorId,
+                    style: TextStyle(color: textPrimaryColor),
+                  ),
+                  subtitle: isCurrentUser
+                      ? Text('You', style: TextStyle(color: textSecondaryColor))
+                      : null,
                   trailing:
                       currentProject!.isOwner(currentUserId) && !isCurrentUser
                       ? IconButton(
-                          icon: const Icon(
-                            PhosphorIcons.trash,
-                            color: Colors.red,
-                          ),
+                          icon: Icon(PhosphorIcons.trash, color: errorColor),
                           onPressed: () {
                             Navigator.pop(context);
                             _removeCollaborator(collaboratorId);
@@ -2820,12 +3177,12 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 Navigator.pop(context);
                 _showInviteCollaboratorDialog();
               },
-              icon: const Icon(PhosphorIcons.plus),
-              label: const Text('Invite'),
+              icon: Icon(PhosphorIcons.plus, color: textPrimaryColor),
+              label: Text('Invite', style: TextStyle(color: textPrimaryColor)),
             ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text('Close', style: TextStyle(color: textSecondaryColor)),
           ),
         ],
       ),
@@ -2853,13 +3210,25 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   }
 
   /// Show color picker dialog (generic - can be used for any color selection)
-  Future<Color?> _showColorPickerDialog(BuildContext context, {required Color initialColor}) async {
+  Future<Color?> _showColorPickerDialog(
+    BuildContext context, {
+    required Color initialColor,
+  }) async {
     Color pickerColor = initialColor;
+
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
 
     final result = await showDialog<Color>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Pilih Warna'),
+        title: Text('Pilih Warna', style: TextStyle(color: textPrimaryColor)),
         content: SingleChildScrollView(
           child: ColorPicker(
             color: pickerColor,
@@ -2874,11 +3243,15 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             wheelDiameter: 200,
             heading: Text(
               'Pilih warna',
-              style: Theme.of(context).textTheme.titleSmall,
+              style: TextStyle(
+                color: textPrimaryColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             subheading: Text(
               'Pilih warna yang diinginkan',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: TextStyle(color: textSecondaryColor, fontSize: 12),
             ),
             pickersEnabled: const <ColorPickerType, bool>{
               ColorPickerType.both: false,
@@ -2893,7 +3266,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+            child: Text('Batal', style: TextStyle(color: textSecondaryColor)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, pickerColor),
@@ -2910,9 +3283,8 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _addSticker() async {
     final imageLink = await showDialog<String>(
       context: context,
-      builder: (context) => const SelectStickerImageDialog(
-        imagesLinks: stickerImageLinks,
-      ),
+      builder: (context) =>
+          const SelectStickerImageDialog(imagesLinks: stickerImageLinks),
     );
 
     if (imageLink == null) return;
@@ -2927,7 +3299,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
       // Load image from network
       final image = await NetworkImage(imageLink).image;
-      
+
       // Add image to canvas
       controller.addImage(
         image,
@@ -2948,10 +3320,19 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _showColorPicker() async {
     Color pickerColor = controller.freeStyleColor;
 
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+
     final result = await showDialog<Color>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Pilih Warna'),
+        title: Text('Pilih Warna', style: TextStyle(color: textPrimaryColor)),
         content: SingleChildScrollView(
           child: ColorPicker(
             color: pickerColor,
@@ -2966,11 +3347,15 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             wheelDiameter: 200,
             heading: Text(
               'Pilih warna brush',
-              style: Theme.of(context).textTheme.titleSmall,
+              style: TextStyle(
+                color: textPrimaryColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             subheading: Text(
               'Pilih warna yang diinginkan',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: TextStyle(color: textSecondaryColor, fontSize: 12),
             ),
             pickersEnabled: const <ColorPickerType, bool>{
               ColorPickerType.both: false,
@@ -2985,7 +3370,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+            child: Text('Batal', style: TextStyle(color: textSecondaryColor)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, pickerColor),
@@ -3006,17 +3391,32 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _showStrokeWidthPicker() async {
     double currentWidth = controller.freeStyleStrokeWidth;
 
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+    final Color dividerColor = isDark
+        ? AppColors.darkSurfaceVariant
+        : AppColors.lightSurfaceVariant;
+
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Ukuran Brush'),
+          title: Text(
+            'Ukuran Brush',
+            style: TextStyle(color: textPrimaryColor),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'Ukuran: ${currentWidth.toStringAsFixed(1)} px',
-                style: const TextStyle(fontSize: 16),
+                style: TextStyle(fontSize: 16, color: textPrimaryColor),
               ),
               const SizedBox(height: 16),
               Slider(
@@ -3037,7 +3437,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                 width: double.infinity,
                 height: 60,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: dividerColor),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Center(
@@ -3056,7 +3456,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Batal'),
+              child: Text('Batal', style: TextStyle(color: textSecondaryColor)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -3077,10 +3477,22 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   Future<void> _showCanvasBackgroundPicker() async {
     Color pickerColor = canvasBackgroundColor;
 
+    // Theme-aware colors
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark
+        ? AppColors.darkTextPrimary
+        : AppColors.lightTextPrimary;
+    final Color textSecondaryColor = isDark
+        ? AppColors.darkTextSecondary
+        : AppColors.lightTextSecondary;
+
     final result = await showDialog<Color>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Background Color'),
+        title: Text(
+          'Background Color',
+          style: TextStyle(color: textPrimaryColor),
+        ),
         contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
         content: SizedBox(
           width: 280,
@@ -3113,7 +3525,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                   children: [
                     Text(
                       'Custom Color',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: TextStyle(color: textSecondaryColor, fontSize: 12),
                     ),
                     const SizedBox(height: 8),
                     ColorPicker(
@@ -3148,7 +3560,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: textSecondaryColor)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, pickerColor),
@@ -3162,10 +3574,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       setState(() {
         canvasBackgroundColor = result;
       });
-      
+
       // Save background color to database
       await _saveBackgroundColor(result);
-      
+
       // Trigger autosave for canvas changes
       _onCanvasChanged();
     }
@@ -3182,10 +3594,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       };
 
       if (widget.isShared) {
-        await projectRepo.updateSharedProject(
-          currentProject!.id,
-          updates,
-        );
+        await projectRepo.updateSharedProject(currentProject!.id, updates);
       } else {
         await projectRepo.updatePrivateProject(
           currentUserId,
@@ -3200,7 +3609,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         updatedAt: DateTime.now(),
       );
       setState(() => currentProject = updatedProject);
-      
+
       print('Background color saved: ${color.value}');
     } catch (e) {
       print('Error saving background color: $e');
@@ -3287,12 +3696,54 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ThemeManager.of(context);
+    // Theme-aware color helpers (SAMA SEPERTI HOME PAGE)
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color backgroundColor = isDark
+        ? AppColors.darkBackground
+        : AppColors.lightBackground;
+    final Color surfaceColor = isDark
+        ? AppColors.darkSurface
+        : AppColors.lightSurface;
+    final Color primaryColor = isDark
+        ? AppColors.darkAccent
+        : AppColors.primary1;
+
     if (isLoading) {
       return Scaffold(
-        backgroundColor: theme.secondary1,
-        appBar: AppBar(title: const Text('Loading...')),
-        body: const CustomLoadingIndicator(message: 'Preparing your canvas...'),
+        backgroundColor: backgroundColor,
+        appBar: AppBar(
+          backgroundColor: isDark ? AppColors.darkAccent : AppColors.primary1,
+          foregroundColor: isDark
+              ? AppColors.darkSurface
+              : AppColors.lightSurface,
+          elevation: 0,
+          title: Text(
+            'Loading...',
+            style: TextStyle(
+              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 24),
+              Text(
+                'Preparing your canvas...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -3302,9 +3753,11 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         const SingleActivator(LogicalKeyboardKey.equal, control: true): _zoomIn,
         const SingleActivator(LogicalKeyboardKey.add, control: true): _zoomIn,
         // Zoom Out: Ctrl + Minus
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): _zoomOut,
+        const SingleActivator(LogicalKeyboardKey.minus, control: true):
+            _zoomOut,
         // Reset to 1:1: Ctrl + 1
-        const SingleActivator(LogicalKeyboardKey.digit1, control: true): _resetCanvasView,
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true):
+            _resetCanvasView,
       },
       child: Focus(
         autofocus: true,
@@ -3315,488 +3768,594 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
             return true; // Allow pop
           },
           child: Scaffold(
-      appBar: AppBar(
-        backgroundColor: theme.secondary1,
-        title: Text(currentProject?.name ?? 'Canvas'),
-        automaticallyImplyLeading: false, // Remove back button
-        leading: IconButton(
-          icon: const Icon(PhosphorIcons.list, size: 24),
-          tooltip: 'Menu',
-          onPressed: () {
-            // Store scaffold context before showing modal
-            final scaffoldContext = context;
-            
-            showModalBottomSheet(
-              context: context,
-              builder: (context) => Container(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const Icon(PhosphorIcons.arrow_left),
-                      title: const Text('Exit Canvas'),
-                      subtitle: const Text('Return to Projects'),
-                      onTap: () async {
-                        Navigator.pop(context); // Close menu
-                        
-                        // Save before exiting
-                        await _saveCurrentLayer();
-                        
-                        // Exit canvas page using scaffold context
-                        if (mounted) Navigator.of(scaffoldContext).pop();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(PhosphorIcons.floppy_disk),
-                      title: const Text('Save Project'),
-                      subtitle: const Text('Save all changes'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _saveCurrentLayer();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(PhosphorIcons.download_simple),
-                      title: const Text('Export Canvas'),
-                      subtitle: const Text('Save as image'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _exportCanvas();
-                      },
-                    ),
-                  ],
+            backgroundColor: backgroundColor,
+            appBar: AppBar(
+              backgroundColor: primaryColor,
+              foregroundColor: surfaceColor,
+              elevation: 0,
+              title: Text(
+                currentProject?.name ?? 'Canvas',
+                style: TextStyle(
+                  color: surfaceColor,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            );
-          },
-        ),
-        actions: [
-          // Toolbar toggle - dengan visual feedback
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: !isToolbarVisible
-                  ? Colors.blue.shade50
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: IconButton(
-              icon: Icon(
-                isToolbarVisible ? PhosphorIcons.eye_slash : PhosphorIcons.eye,
-                size: 20,
-                color: !isToolbarVisible ? Colors.blue : null,
+              automaticallyImplyLeading: false, // Remove back button
+              leading: IconButton(
+                icon: Icon(PhosphorIcons.list, size: 24, color: surfaceColor),
+                tooltip: 'Menu',
+                onPressed: () {
+                  // Store scaffold context before showing modal
+                  final scaffoldContext = context;
+
+                  showModalBottomSheet(
+                    context: context,
+                    builder: (modalContext) {
+                      // Theme-aware colors for menu
+                      final bool isDark =
+                          Theme.of(context).brightness == Brightness.dark;
+                      final Color textPrimaryColor = isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary;
+                      final Color textSecondaryColor = isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary;
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: Icon(
+                                PhosphorIcons.arrow_left,
+                                color: textPrimaryColor,
+                              ),
+                              title: Text(
+                                'Exit Canvas',
+                                style: TextStyle(color: textPrimaryColor),
+                              ),
+                              subtitle: Text(
+                                'Return to Projects',
+                                style: TextStyle(color: textSecondaryColor),
+                              ),
+                              onTap: () async {
+                                Navigator.pop(modalContext); // Close menu
+
+                                // Save before exiting
+                                await _saveCurrentLayer();
+
+                                // Exit canvas page using scaffold context
+                                if (mounted)
+                                  Navigator.of(scaffoldContext).pop();
+                              },
+                            ),
+                            ListTile(
+                              leading: Icon(
+                                PhosphorIcons.floppy_disk,
+                                color: textPrimaryColor,
+                              ),
+                              title: Text(
+                                'Save Project',
+                                style: TextStyle(color: textPrimaryColor),
+                              ),
+                              subtitle: Text(
+                                'Save all changes',
+                                style: TextStyle(color: textSecondaryColor),
+                              ),
+                              onTap: () {
+                                Navigator.pop(modalContext);
+                                _saveCurrentLayer();
+                              },
+                            ),
+                            ListTile(
+                              leading: Icon(
+                                PhosphorIcons.download_simple,
+                                color: textPrimaryColor,
+                              ),
+                              title: Text(
+                                'Export Canvas',
+                                style: TextStyle(color: textPrimaryColor),
+                              ),
+                              subtitle: Text(
+                                'Save as image',
+                                style: TextStyle(color: textSecondaryColor),
+                              ),
+                              onTap: () {
+                                Navigator.pop(modalContext);
+                                _exportCanvas();
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-              onPressed: () {
-                setState(() {
-                  isToolbarVisible = !isToolbarVisible;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      isToolbarVisible ? 'Toolbar shown' : 'Toolbar hidden',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    duration: const Duration(milliseconds: 800),
-                    backgroundColor: Colors.black87,
-                    behavior: SnackBarBehavior.floating,
-                    margin: const EdgeInsets.only(
-                      bottom: 80,
-                      left: 16,
-                      right: 16,
-                    ),
+              actions: [
+                // Toolbar toggle - dengan visual feedback
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: !isToolbarVisible
+                        ? Colors.blue.shade50
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                );
-              },
-              tooltip: isToolbarVisible ? 'Hide Toolbar' : 'Show Toolbar',
-            ),
-          ),
-          const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-          // Save button
-          IconButton(
-            icon: isSaving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+                  child: IconButton(
+                    icon: Icon(
+                      isToolbarVisible
+                          ? PhosphorIcons.eye_slash
+                          : PhosphorIcons.eye,
+                      size: 20,
+                      color: !isToolbarVisible ? Colors.blue : null,
                     ),
-                  )
-                : const Icon(PhosphorIcons.floppy_disk),
-            onPressed: isSaving ? null : _saveCurrentLayer,
-            tooltip: 'Save',
-            iconSize: 20,
-          ),
-          // Export canvas - ONLY OWNER (MVP Requirement)
-          if (currentProject != null && currentProject!.isOwner(currentUserId))
-            IconButton(
-              icon: const Icon(PhosphorIcons.download_simple),
-              onPressed: _exportCanvas,
-              tooltip: 'Export Canvas (Owner Only)',
-              iconSize: 20,
-            ),
-          // Sell to Marketplace - ONLY OWNER (MVP Requirement)
-          if (currentProject != null && currentProject!.isOwner(currentUserId))
-            IconButton(
-              icon: const Icon(PhosphorIcons.storefront),
-              onPressed: _sellToMarketplace,
-              tooltip: 'Sell to Marketplace (Owner Only)',
-              iconSize: 20,
-            ),
-          const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-          // Layer panel
-          IconButton(
-            icon: const Icon(PhosphorIcons.stack),
-            onPressed: _showLayerPanel,
-            tooltip: 'Layers',
-            iconSize: 20,
-          ),
-          // Collaborators (only for shared projects)
-          if (widget.isShared)
-            Stack(
-              children: [
+                    onPressed: () {
+                      setState(() {
+                        isToolbarVisible = !isToolbarVisible;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isToolbarVisible
+                                ? 'Toolbar shown'
+                                : 'Toolbar hidden',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          duration: const Duration(milliseconds: 800),
+                          backgroundColor: Colors.black87,
+                          behavior: SnackBarBehavior.floating,
+                          margin: const EdgeInsets.only(
+                            bottom: 80,
+                            left: 16,
+                            right: 16,
+                          ),
+                        ),
+                      );
+                    },
+                    tooltip: isToolbarVisible ? 'Hide Toolbar' : 'Show Toolbar',
+                  ),
+                ),
+                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
+                // Save button
                 IconButton(
-                  icon: const Icon(PhosphorIcons.users_three),
-                  onPressed: _showActiveCollaborators,
+                  icon: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(PhosphorIcons.floppy_disk),
+                  onPressed: isSaving ? null : _saveCurrentLayer,
+                  tooltip: 'Save',
                   iconSize: 20,
                 ),
-                // Active collaborator badge
+                // Export canvas - ONLY OWNER (MVP Requirement)
                 if (currentProject != null &&
-                    currentProject!.collaboratorIds.isNotEmpty)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 12,
-                        minHeight: 12,
-                      ),
-                      child: Text(
-                        '${currentProject!.collaboratorIds.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                    currentProject!.isOwner(currentUserId))
+                  IconButton(
+                    icon: const Icon(PhosphorIcons.download_simple),
+                    onPressed: _exportCanvas,
+                    tooltip: 'Export Canvas (Owner Only)',
+                    iconSize: 20,
                   ),
+                // Sell to Marketplace - ONLY OWNER (MVP Requirement)
+                if (currentProject != null &&
+                    currentProject!.isOwner(currentUserId))
+                  IconButton(
+                    icon: const Icon(PhosphorIcons.storefront),
+                    onPressed: _sellToMarketplace,
+                    tooltip: 'Sell to Marketplace (Owner Only)',
+                    iconSize: 20,
+                  ),
+                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
+                // Layer panel
+                IconButton(
+                  icon: const Icon(PhosphorIcons.stack),
+                  onPressed: _showLayerPanel,
+                  tooltip: 'Layers',
+                  iconSize: 20,
+                ),
+                // Collaborators (only for shared projects)
+                if (widget.isShared)
+                  Stack(
+                    children: [
+                      IconButton(
+                        icon: const Icon(PhosphorIcons.users_three),
+                        onPressed: _showActiveCollaborators,
+                        iconSize: 20,
+                      ),
+                      // Active collaborator badge
+                      if (currentProject != null &&
+                          currentProject!.collaboratorIds.isNotEmpty)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 12,
+                              minHeight: 12,
+                            ),
+                            child: Text(
+                              '${currentProject!.collaboratorIds.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                // View options dropdown
+                PopupMenuButton<String>(
+                  icon: const Icon(PhosphorIcons.eye, size: 20),
+                  tooltip: 'View',
+                  onSelected: (String value) {
+                    if (value == 'background') {
+                      _showCanvasBackgroundPicker();
+                    } else if (value == 'mirror_h') {
+                      _toggleMirrorHorizontal();
+                    } else if (value == 'mirror_v') {
+                      _toggleMirrorVertical();
+                    }
+                  },
+                  itemBuilder: (menuContext) {
+                    // Theme-aware colors for menu
+                    final bool isDark =
+                        Theme.of(context).brightness == Brightness.dark;
+                    final Color textPrimaryColor = isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary;
+                    final Color primaryColor = isDark
+                        ? AppColors.darkAccent
+                        : AppColors.primary1;
+
+                    return [
+                      PopupMenuItem<String>(
+                        value: 'background',
+                        child: ListTile(
+                          leading: Icon(
+                            PhosphorIcons.paint_bucket,
+                            color: canvasBackgroundColor,
+                            size: 20,
+                          ),
+                          title: Text(
+                            'Background Color',
+                            style: TextStyle(color: textPrimaryColor),
+                          ),
+                          dense: true,
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'mirror_h',
+                        child: ListTile(
+                          leading: Icon(
+                            PhosphorIcons.arrows_left_right,
+                            color: isMirrorHorizontal
+                                ? primaryColor
+                                : textPrimaryColor,
+                            size: 20,
+                          ),
+                          title: Text(
+                            'Mirror Horizontal',
+                            style: TextStyle(color: textPrimaryColor),
+                          ),
+                          trailing: isMirrorHorizontal
+                              ? Icon(
+                                  PhosphorIcons.check,
+                                  size: 16,
+                                  color: primaryColor,
+                                )
+                              : null,
+                          dense: true,
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'mirror_v',
+                        child: ListTile(
+                          leading: Icon(
+                            PhosphorIcons.arrows_down_up,
+                            color: isMirrorVertical
+                                ? primaryColor
+                                : textPrimaryColor,
+                            size: 20,
+                          ),
+                          title: Text(
+                            'Mirror Vertical',
+                            style: TextStyle(color: textPrimaryColor),
+                          ),
+                          trailing: isMirrorVertical
+                              ? Icon(
+                                  PhosphorIcons.check,
+                                  size: 16,
+                                  color: primaryColor,
+                                )
+                              : null,
+                          dense: true,
+                        ),
+                      ),
+                    ];
+                  },
+                ),
               ],
             ),
-          // View options dropdown
-          PopupMenuButton<String>(
-            icon: const Icon(PhosphorIcons.eye, size: 20),
-            tooltip: 'View',
-            onSelected: (String value) {
-              if (value == 'background') {
-                _showCanvasBackgroundPicker();
-              } else if (value == 'mirror_h') {
-                _toggleMirrorHorizontal();
-              } else if (value == 'mirror_v') {
-                _toggleMirrorVertical();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem<String>(
-                value: 'background',
-                child: ListTile(
-                  leading: Icon(
-                    PhosphorIcons.paint_bucket,
-                    color: canvasBackgroundColor,
-                    size: 20,
-                  ),
-                  title: const Text('Background Color'),
-                  dense: true,
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'mirror_h',
-                child: ListTile(
-                  leading: Icon(
-                    PhosphorIcons.arrows_left_right,
-                    color: isMirrorHorizontal ? Colors.blue : null,
-                    size: 20,
-                  ),
-                  title: const Text('Mirror Horizontal'),
-                  trailing: isMirrorHorizontal
-                      ? const Icon(PhosphorIcons.check, size: 16)
-                      : null,
-                  dense: true,
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'mirror_v',
-                child: ListTile(
-                  leading: Icon(
-                    PhosphorIcons.arrows_down_up,
-                    color: isMirrorVertical ? Colors.blue : null,
-                    size: 20,
-                  ),
-                  title: const Text('Mirror Vertical'),
-                  trailing: isMirrorVertical
-                      ? const Icon(PhosphorIcons.check, size: 16)
-                      : null,
-                  dense: true,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          // Main canvas with rotation - UNLIMITED ZOOM & FULL CANVAS SIZE
-          // ✅ TODO: 2-finger rotation gesture will be added in next update
-          Container(
-            color: Colors.grey.shade300,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final canvasWidth = (currentProject?.canvasWidth ?? 1920)
-                    .toDouble();
-                final canvasHeight = (currentProject?.canvasHeight ?? 1080)
-                    .toDouble();
+            body: Stack(
+              children: [
+                // Main canvas with rotation - UNLIMITED ZOOM & FULL CANVAS SIZE
+                // ✅ TODO: 2-finger rotation gesture will be added in next update
+                Container(
+                  color: Colors.grey.shade300,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final canvasWidth = (currentProject?.canvasWidth ?? 1920)
+                          .toDouble();
+                      final canvasHeight =
+                          (currentProject?.canvasHeight ?? 1080).toDouble();
 
-                return InteractiveViewer(
-                  transformationController: transformationController,
-                  boundaryMargin: EdgeInsets.all(
-                    max(canvasWidth, canvasHeight) * 2.0, // Increased to 2x for better pan freedom
-                  ), // Allow panning beyond canvas edges
-                  minScale: 0.01, // Zoom out sangat jauh (100x zoom out)
-                  maxScale: 50.0, // Zoom in sangat detail (50x zoom in)
-                  constrained: false, // CRITICAL: Allow canvas larger than screen
-                  panEnabled: true, // Always enable pan for better UX
-                  scaleEnabled: true, // Always allow pinch zoom
-                  alignment: Alignment.center,
-                  child: Container(
-                    // Container wrapper untuk memastikan transform tidak overflow
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    alignment: Alignment.center,
-                    child: Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()
-                        ..rotateZ(
-                          canvasRotation * 3.14159 / 180,
-                        ) // Convert degrees to radians
-                        ..scale(
-                          isMirrorHorizontal ? -1.0 : 1.0,
-                          isMirrorVertical ? -1.0 : 1.0,
-                        ),
-                      child: Container(
-                        width: canvasWidth,
-                        height: canvasHeight,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Colors.grey.shade800,
-                            width: 2,
-                          ),
-                          color: canvasBackgroundColor,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5),
+                      return InteractiveViewer(
+                        transformationController: transformationController,
+                        boundaryMargin: EdgeInsets.all(
+                          max(canvasWidth, canvasHeight) *
+                              2.0, // Increased to 2x for better pan freedom
+                        ), // Allow panning beyond canvas edges
+                        minScale: 0.01, // Zoom out sangat jauh (100x zoom out)
+                        maxScale: 50.0, // Zoom in sangat detail (50x zoom in)
+                        constrained:
+                            false, // CRITICAL: Allow canvas larger than screen
+                        panEnabled: true, // Always enable pan for better UX
+                        scaleEnabled: true, // Always allow pinch zoom
+                        alignment: Alignment.center,
+                        child: Container(
+                          // Container wrapper untuk memastikan transform tidak overflow
+                          width: canvasWidth,
+                          height: canvasHeight,
+                          alignment: Alignment.center,
+                          child: Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.identity()
+                              ..rotateZ(
+                                canvasRotation * 3.14159 / 180,
+                              ) // Convert degrees to radians
+                              ..scale(
+                                isMirrorHorizontal ? -1.0 : 1.0,
+                                isMirrorVertical ? -1.0 : 1.0,
+                              ),
+                            child: Container(
+                              width: canvasWidth,
+                              height: canvasHeight,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.grey.shade800,
+                                  width: 2,
+                                ),
+                                color: canvasBackgroundColor,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: Stack(
+                                children: [
+                                  // Render all visible layers sorted by zIndex (lowest first)
+                                  ...() {
+                                    // Create list of layer widgets
+                                    final layerWidgets = <Widget>[];
+
+                                    // Sort layers by zIndex
+                                    final sortedIndices =
+                                        List.generate(layers.length, (i) => i)
+                                          ..sort(
+                                            (a, b) => layers[a].zIndex
+                                                .compareTo(layers[b].zIndex),
+                                          );
+
+                                    for (final index in sortedIndices) {
+                                      final layer = layers[index];
+                                      if (!layer.isVisible) continue;
+
+                                      final isActiveLayer =
+                                          index == selectedLayerIndex;
+
+                                      // Active layer uses FlutterPainter (editable)
+                                      if (isActiveLayer) {
+                                        layerWidgets.add(
+                                          // When pan tool is active, ignore FlutterPainter gestures
+                                          // This allows InteractiveViewer to handle pan/zoom
+                                          IgnorePointer(
+                                            ignoring: isPanToolActive,
+                                            child: FlutterPainter(
+                                              controller: controller,
+                                            ),
+                                          ),
+                                        );
+                                      } else {
+                                        // Non-active layers show rendered image (read-only)
+                                        final layerImage =
+                                            layerImages[layer.id];
+                                        if (layerImage != null) {
+                                          layerWidgets.add(
+                                            Opacity(
+                                              opacity: layer.opacity,
+                                              child: RawImage(
+                                                image: layerImage,
+                                                width: canvasWidth,
+                                                height: canvasHeight,
+                                                fit: BoxFit.fill,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+
+                                    return layerWidgets;
+                                  }(),
+                                ],
+                              ),
                             ),
-                          ],
+                          ),
                         ),
+                      );
+                    },
+                  ),
+                ),
+                // Minimap overlay - lebih kecil
+                if (showMinimap)
+                  Positioned(
+                    bottom: isToolbarVisible
+                        ? 80
+                        : 16, // Increased from 70 to 80
+                    right: 16,
+                    child: Container(
+                      width: 120,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.blue, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
                         child: Stack(
                           children: [
-                            // Render all visible layers sorted by zIndex (lowest first)
-                            ...() {
-                              // Create list of layer widgets
-                              final layerWidgets = <Widget>[];
-                              
-                              // Sort layers by zIndex
-                              final sortedIndices = List.generate(layers.length, (i) => i)
-                                ..sort((a, b) => layers[a].zIndex.compareTo(layers[b].zIndex));
-
-                              for (final index in sortedIndices) {
-                                final layer = layers[index];
-                                if (!layer.isVisible) continue;
-
-                                final isActiveLayer = index == selectedLayerIndex;
-
-                                // Active layer uses FlutterPainter (editable)
-                                if (isActiveLayer) {
-                                  layerWidgets.add(
-                                    // When pan tool is active, ignore FlutterPainter gestures
-                                    // This allows InteractiveViewer to handle pan/zoom
-                                    IgnorePointer(
-                                      ignoring: isPanToolActive,
-                                      child: FlutterPainter(controller: controller),
+                            // Minimap canvas preview
+                            Center(
+                              child: Transform.scale(
+                                scale: 0.055,
+                                child: Container(
+                                  width: (currentProject?.canvasWidth ?? 1920)
+                                      .toDouble(),
+                                  height: (currentProject?.canvasHeight ?? 1080)
+                                      .toDouble(),
+                                  color: canvasBackgroundColor,
+                                  child: IgnorePointer(
+                                    child: FlutterPainter(
+                                      controller: controller,
                                     ),
-                                  );
-                                } else {
-                                  // Non-active layers show rendered image (read-only)
-                                  final layerImage = layerImages[layer.id];
-                                  if (layerImage != null) {
-                                    layerWidgets.add(
-                                      Opacity(
-                                        opacity: layer.opacity,
-                                        child: RawImage(
-                                          image: layerImage,
-                                          width: canvasWidth,
-                                          height: canvasHeight,
-                                          fit: BoxFit.fill,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                }
-                              }
-
-                              return layerWidgets;
-                            }(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Minimap label
+                            Positioned(
+                              top: 2,
+                              left: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: const Text(
+                                  'Map',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-          // Minimap overlay - lebih kecil
-          if (showMinimap)
-            Positioned(
-              bottom: isToolbarVisible ? 80 : 16, // Increased from 70 to 80
-              right: 16,
-              child: Container(
-                width: 120,
-                height: 80,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.blue, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Stack(
-                    children: [
-                      // Minimap canvas preview
-                      Center(
-                        child: Transform.scale(
-                          scale: 0.055,
-                          child: Container(
-                            width: (currentProject?.canvasWidth ?? 1920)
-                                .toDouble(),
-                            height: (currentProject?.canvasHeight ?? 1080)
-                                .toDouble(),
-                            color: canvasBackgroundColor,
-                            child: IgnorePointer(
-                              child: FlutterPainter(controller: controller),
-                            ),
-                          ),
+                // 🎥 Floating Collaborator Avatars (Zoom-like) - ONLY FOR SHARED PROJECTS
+                if (widget.isShared && currentProject != null)
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: _buildFloatingCollaboratorAvatars(),
+                  ),
+                // Zoom level display - bottom left
+                Positioned(
+                  bottom: isToolbarVisible ? 80 : 16,
+                  left: 16,
+                  child: AnimatedBuilder(
+                    animation: transformationController,
+                    builder: (context, child) {
+                      final zoom = transformationController.value
+                          .getMaxScaleOnAxis();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                      ),
-                      // Minimap label
-                      Positioned(
-                        top: 2,
-                        left: 2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: const Text(
-                            'Map',
-                            style: TextStyle(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              PhosphorIcons.magnifying_glass,
                               color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
+                              size: 14,
                             ),
-                          ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${(zoom * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
+              ],
+            ),
+            bottomNavigationBar: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: isToolbarVisible ? null : 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: isToolbarVisible ? 1.0 : 0.0,
+                child: isToolbarVisible
+                    ? SafeArea(bottom: true, child: _buildToolbar())
+                    : const SizedBox.shrink(),
               ),
             ),
-          // 🎥 Floating Collaborator Avatars (Zoom-like) - ONLY FOR SHARED PROJECTS
-          if (widget.isShared && currentProject != null)
-            Positioned(
-              top: 16,
-              right: 16,
-              child: _buildFloatingCollaboratorAvatars(),
-            ),
-          // Zoom level display - bottom left
-          Positioned(
-            bottom: isToolbarVisible ? 80 : 16,
-            left: 16,
-            child: AnimatedBuilder(
-              animation: transformationController,
-              builder: (context, child) {
-                final zoom = transformationController.value.getMaxScaleOnAxis();
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        PhosphorIcons.magnifying_glass,
-                        color: Colors.white,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${(zoom * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        height: isToolbarVisible ? null : 0,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: isToolbarVisible ? 1.0 : 0.0,
-          child: isToolbarVisible
-              ? SafeArea(bottom: true, child: _buildToolbar())
-              : const SizedBox.shrink(),
-        ),
-      ),
-        ), // Close Scaffold
+          ), // Close Scaffold
         ), // Close WillPopScope
       ), // Close Focus
     ); // Close CallbackShortcuts
@@ -3861,7 +4420,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                           value: 'in',
                           child: Row(
                             children: const [
-                              Icon(PhosphorIcons.magnifying_glass_plus, size: 18),
+                              Icon(
+                                PhosphorIcons.magnifying_glass_plus,
+                                size: 18,
+                              ),
                               SizedBox(width: 8),
                               Text('Zoom In'),
                             ],
@@ -3871,7 +4433,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                           value: 'out',
                           child: Row(
                             children: const [
-                              Icon(PhosphorIcons.magnifying_glass_minus, size: 18),
+                              Icon(
+                                PhosphorIcons.magnifying_glass_minus,
+                                size: 18,
+                              ),
                               SizedBox(width: 8),
                               Text('Zoom Out'),
                             ],
@@ -3880,14 +4445,18 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                       ],
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Theme.of(context).brightness == Brightness.dark
                               ? Colors.grey.shade800
                               : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? Colors.grey.shade700
                                 : Colors.grey.shade300,
                           ),
@@ -3898,7 +4467,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             Icon(
                               PhosphorIcons.magnifying_glass,
                               size: 18,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : Colors.black87,
                             ),
@@ -3906,7 +4477,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             Icon(
                               Icons.arrow_drop_down,
                               size: 16,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : Colors.black87,
                             ),
@@ -3928,7 +4501,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                           value: 'left',
                           child: Row(
                             children: const [
-                              Icon(PhosphorIcons.arrow_counter_clockwise, size: 18),
+                              Icon(
+                                PhosphorIcons.arrow_counter_clockwise,
+                                size: 18,
+                              ),
                               SizedBox(width: 8),
                               Text('Rotate Left'),
                             ],
@@ -3947,14 +4523,18 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                       ],
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Theme.of(context).brightness == Brightness.dark
                               ? Colors.grey.shade800
                               : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? Colors.grey.shade700
                                 : Colors.grey.shade300,
                           ),
@@ -3965,7 +4545,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             Icon(
                               PhosphorIcons.arrows_clockwise,
                               size: 18,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : Colors.black87,
                             ),
@@ -3973,7 +4555,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             Icon(
                               Icons.arrow_drop_down,
                               size: 16,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : Colors.black87,
                             ),
@@ -4016,14 +4600,17 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                       setState(() {
                         isPanToolActive = false;
                         isBlurToolActive = false;
-                        
+
                         if (controller.freeStyleMode != FreeStyleMode.erase) {
                           // Enable erase mode: use background color with current opacity
                           controller.freeStyleMode = FreeStyleMode.erase;
                           // Store current color to restore later
-                          controller.freeStyleColor = canvasBackgroundColor.withOpacity(
-                            controller.freeStyleColor.opacity, // Keep current opacity
-                          );
+                          controller.freeStyleColor = canvasBackgroundColor
+                              .withOpacity(
+                                controller
+                                    .freeStyleColor
+                                    .opacity, // Keep current opacity
+                              );
                         } else {
                           // Disable erase mode
                           controller.freeStyleMode = FreeStyleMode.none;
@@ -4269,7 +4856,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                     // Font Size Slider
                     Container(
                       width: 150,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(6),
@@ -4308,9 +4898,13 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                             inactiveColor: Colors.grey.shade300,
                             onChanged: (value) {
                               setState(() {
-                                controller.textSettings = controller.textSettings.copyWith(
-                                  textStyle: controller.textStyle.copyWith(fontSize: value),
-                                );
+                                controller.textSettings = controller
+                                    .textSettings
+                                    .copyWith(
+                                      textStyle: controller.textStyle.copyWith(
+                                        fontSize: value,
+                                      ),
+                                    );
                               });
                             },
                           ),
@@ -4324,13 +4918,17 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                         onTap: () async {
                           final color = await _showColorPickerDialog(
                             context,
-                            initialColor: controller.textStyle.color ?? Colors.black,
+                            initialColor:
+                                controller.textStyle.color ?? Colors.black,
                           );
                           if (color != null) {
                             setState(() {
-                              controller.textSettings = controller.textSettings.copyWith(
-                                textStyle: controller.textStyle.copyWith(color: color),
-                              );
+                              controller.textSettings = controller.textSettings
+                                  .copyWith(
+                                    textStyle: controller.textStyle.copyWith(
+                                      color: color,
+                                    ),
+                                  );
                             });
                           }
                         },
@@ -4341,7 +4939,10 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
                           decoration: BoxDecoration(
                             color: controller.textStyle.color ?? Colors.black,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.grey.shade400, width: 2),
+                            border: Border.all(
+                              color: Colors.grey.shade400,
+                              width: 2,
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.2),
@@ -4523,29 +5124,29 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   void _resetCanvasView() {
     final canvasWidth = (currentProject?.canvasWidth ?? 1920).toDouble();
     final canvasHeight = (currentProject?.canvasHeight ?? 1080).toDouble();
-    
+
     // Get screen size
     final screenSize = MediaQuery.of(context).size;
     final screenWidth = screenSize.width;
     final screenHeight = screenSize.height - 200; // Account for toolbar
-    
+
     // Calculate offset to center canvas at 1:1 scale
     // Center point of screen
     final centerScreenX = screenWidth / 2;
     final centerScreenY = screenHeight / 2;
-    
+
     // Center point of canvas
     final centerCanvasX = canvasWidth / 2;
     final centerCanvasY = canvasHeight / 2;
-    
+
     // Translation to center canvas on screen
     final translateX = centerScreenX - centerCanvasX;
     final translateY = centerScreenY - centerCanvasY;
-    
+
     // Reset transformation to 1:1 scale (no scale, just center)
     transformationController.value = Matrix4.identity()
       ..translate(translateX, translateY);
-    
+
     _showSuccess('Canvas 1:1 - Actual Size');
   }
 
@@ -4553,28 +5154,28 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   void _zoomIn() {
     final currentMatrix = transformationController.value.clone();
     final currentScale = currentMatrix.getMaxScaleOnAxis();
-    
+
     // Maximum zoom in: 50x
     if (currentScale >= 50.0) {
       _showError('Maximum zoom reached');
       return;
     }
-    
+
     final newScale = min(currentScale * 1.2, 50.0); // Increase by 20%
     final scaleChange = newScale / currentScale;
-    
+
     // Get screen center
     final screenSize = MediaQuery.of(context).size;
     final centerX = screenSize.width / 2;
     final centerY = (screenSize.height - 200) / 2;
-    
+
     // Scale from center point
     final matrix = Matrix4.identity()
       ..translate(centerX, centerY)
       ..scale(scaleChange)
       ..translate(-centerX, -centerY)
       ..multiply(currentMatrix);
-    
+
     // Smooth animation
     _animateZoom(matrix);
     // Removed notification - zoom level shown in bottom display
@@ -4585,25 +5186,33 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     final startMatrix = transformationController.value.clone();
     const duration = Duration(milliseconds: 200); // Smooth 200ms animation
     final startTime = DateTime.now();
-    
-    Timer.periodic(const Duration(milliseconds: 16), (timer) { // ~60 FPS
+
+    Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      // ~60 FPS
       final elapsed = DateTime.now().difference(startTime);
-      final t = (elapsed.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-      
+      final t = (elapsed.inMilliseconds / duration.inMilliseconds).clamp(
+        0.0,
+        1.0,
+      );
+
       if (t >= 1.0) {
         transformationController.value = targetMatrix;
         timer.cancel();
         return;
       }
-      
+
       // Ease-out cubic interpolation for smooth feel
       final progress = (1 - pow(1 - t, 3)).toDouble();
-      
+
       // Interpolate between start and target matrix
-      transformationController.value = _lerpMatrix4(startMatrix, targetMatrix, progress);
+      transformationController.value = _lerpMatrix4(
+        startMatrix,
+        targetMatrix,
+        progress,
+      );
     });
   }
-  
+
   /// Linear interpolation between two Matrix4
   Matrix4 _lerpMatrix4(Matrix4 a, Matrix4 b, double t) {
     final result = Matrix4.zero();
@@ -4617,28 +5226,28 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
   void _zoomOut() {
     final currentMatrix = transformationController.value.clone();
     final currentScale = currentMatrix.getMaxScaleOnAxis();
-    
+
     // Minimum zoom out: 0.01x
     if (currentScale <= 0.01) {
       _showError('Minimum zoom reached');
       return;
     }
-    
+
     final newScale = max(currentScale / 1.2, 0.01); // Decrease by 20%
     final scaleChange = newScale / currentScale;
-    
+
     // Get screen center
     final screenSize = MediaQuery.of(context).size;
     final centerX = screenSize.width / 2;
     final centerY = (screenSize.height - 200) / 2;
-    
+
     // Scale from center point
     final matrix = Matrix4.identity()
       ..translate(centerX, centerY)
       ..scale(scaleChange)
       ..translate(-centerX, -centerY)
       ..multiply(currentMatrix);
-    
+
     // Smooth animation
     _animateZoom(matrix);
     // Removed notification - zoom level shown in bottom display
@@ -4650,18 +5259,20 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
       isBlurToolActive = !isBlurToolActive;
       if (isBlurToolActive) {
         isPanToolActive = false;
-        
+
         // Use draw mode with current selected color but semi-transparent
         // This creates blur by overlaying semi-transparent color over existing strokes
         controller.freeStyleMode = FreeStyleMode.draw;
-        
+
         // Note: Don't change color or stroke width here
         // User can select any color and size they want for blur
         // The blur effect comes from drawing with semi-transparent color
         // If user wants to change blur color, they change it via color picker
         // If user wants to change blur size, they change it via size picker
-        
-        _showSuccess('Blur tool activated - Select color & size for blur effect');
+
+        _showSuccess(
+          'Blur tool activated - Select color & size for blur effect',
+        );
       } else {
         // When deactivating blur tool, return to normal mode
         controller.freeStyleMode = FreeStyleMode.none;
@@ -4791,68 +5402,68 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
           ),
           const SizedBox(height: 8),
           // Avatars
-          ...otherUsers.map((userId) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(userId)
-                      .get(),
-                  builder: (context, snapshot) {
-                    String? photoURL;
-                    String displayName = 'User';
-                    
-                    if (snapshot.connectionState == ConnectionState.done) {
-                      if (snapshot.hasData && snapshot.data!.exists) {
-                        final userData = snapshot.data!.data() as Map<String, dynamic>?;
-                        photoURL = userData?['photoURL'];
-                        displayName = userData?['displayName'] ?? 'User';
-                      }
-                    }
+          ...otherUsers.map(
+            (userId) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .get(),
+                builder: (context, snapshot) {
+                  String? photoURL;
+                  String displayName = 'User';
 
-                    return Tooltip(
-                      message: displayName,
-                      child: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.greenAccent,
-                            width: 2,
+                  if (snapshot.connectionState == ConnectionState.done) {
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      final userData =
+                          snapshot.data!.data() as Map<String, dynamic>?;
+                      photoURL = userData?['photoURL'];
+                      displayName = userData?['displayName'] ?? 'User';
+                    }
+                  }
+
+                  return Tooltip(
+                    message: displayName,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.greenAccent, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.greenAccent.withOpacity(0.5),
+                            blurRadius: 6,
+                            spreadRadius: 1,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.greenAccent.withOpacity(0.5),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: CircleAvatar(
-                          radius: 22,
-                          backgroundColor: Colors.grey[800],
-                          backgroundImage: photoURL != null 
-                              ? NetworkImage(photoURL)
-                              : null,
-                          child: photoURL == null
-                              ? Text(
-                                  displayName.isNotEmpty 
-                                      ? displayName[0].toUpperCase()
-                                      : 'U',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                )
-                              : null,
-                        ),
+                        ],
                       ),
-                    );
-                  },
-                ),
-              )),
+                      child: CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Colors.grey[800],
+                        backgroundImage: photoURL != null
+                            ? NetworkImage(photoURL)
+                            : null,
+                        child: photoURL == null
+                            ? Text(
+                                displayName.isNotEmpty
+                                    ? displayName[0].toUpperCase()
+                                    : 'U',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -4871,7 +5482,7 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
     // Calculate stroke color (opposite brightness)
     final isLightColor = color.computeLuminance() > 0.5;
     final strokeColor = isLightColor ? Colors.black : Colors.white;
-    
+
     // Create text span with stroke
     final textSpan = TextSpan(
       text: text,
@@ -4880,7 +5491,9 @@ class _LayerPaintPageState extends State<LayerPaintPage> {
         fontWeight: fontWeight,
         foreground: Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = fontSize * 0.08 // 8% of fontSize for outline thickness
+          ..strokeWidth =
+              fontSize *
+              0.08 // 8% of fontSize for outline thickness
           ..color = strokeColor.withOpacity(0.7),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:muraloka/all_code/data_api/canvas_artwork_repository.dart';
+import '../../constant/constant.dart';
 
 class RenderedImageDialog extends StatefulWidget {
   final Future<Uint8List?> imageFuture;
@@ -35,7 +36,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Storage permission denied'),
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.error,
               ),
             );
           }
@@ -85,10 +86,10 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
                   ? 'Image saved to ${permanentFile.path}'
                   : 'Image ready to share',
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
             action: SnackBarAction(
               label: 'Share',
-              textColor: Colors.white,
+              textColor: AppColors.lightSurface,
               onPressed: () => _shareImage(tempFile),
             ),
           ),
@@ -100,7 +101,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving image: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -127,7 +128,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error sharing image: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -164,7 +165,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Canvas saved to Firestore successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
         Navigator.of(context).pop();
@@ -172,7 +173,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to save canvas'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -181,7 +182,7 @@ class _RenderedImageDialogState extends State<RenderedImageDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving to Firestore: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../utils/qris_payment_service.dart';
+import '../../constant/constant.dart';
 
 class QRISPaymentDialog extends StatelessWidget {
   final String projectName;
@@ -69,7 +70,7 @@ class QRISPaymentDialog extends StatelessWidget {
                       Text(
                         'Scan QR code untuk membayar',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
+                          color: AppColors.getTextTertiary(context),
                         ),
                       ),
                     ],
@@ -87,16 +88,16 @@ class QRISPaymentDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
+                color: AppColors.getSurfaceVariant(context),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[200]!),
+                border: Border.all(color: AppColors.getBorder(context)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.palette, size: 16, color: Colors.grey[600]),
+                      Icon(Icons.palette, size: 16, color: AppColors.getTextTertiary(context)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -114,14 +115,14 @@ class QRISPaymentDialog extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(Icons.store, size: 16, color: Colors.grey[600]),
+                      Icon(Icons.store, size: 16, color: AppColors.getTextTertiary(context)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           sellerName,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey[700],
+                            color: AppColors.getTextSecondary(context),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -137,7 +138,7 @@ class QRISPaymentDialog extends StatelessWidget {
                         'Total Pembayaran',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey[600],
+                          color: AppColors.getTextTertiary(context),
                         ),
                       ),
                       Text(
@@ -163,7 +164,7 @@ class QRISPaymentDialog extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white,
+                    AppColors.getSurface(context),
                     Theme.of(context).primaryColor.withOpacity(0.02),
                   ],
                 ),
@@ -186,11 +187,11 @@ class QRISPaymentDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppColors.getSurface(context),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: AppColors.getShadow(context),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -233,14 +234,14 @@ class QRISPaymentDialog extends StatelessWidget {
                         const Icon(
                           Icons.qr_code_scanner,
                           size: 18,
-                          color: Colors.white,
+                          color: AppColors.lightSurface,
                         ),
                         const SizedBox(width: 8),
                         const Text(
                           'Scan untuk Membayar',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white,
+                            color: AppColors.lightSurface,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.5,
                           ),
@@ -276,7 +277,7 @@ class QRISPaymentDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: AppColors.lightInfo.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -285,7 +286,7 @@ class QRISPaymentDialog extends StatelessWidget {
                   Icon(
                     Icons.info_outline,
                     size: 16,
-                    color: Colors.blue[700],
+                    color: AppColors.lightInfo,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -293,7 +294,7 @@ class QRISPaymentDialog extends StatelessWidget {
                       'Scan QR code menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.blue[900],
+                        color: AppColors.lightTextPrimary,
                         height: 1.4,
                       ),
                     ),

@@ -100,8 +100,11 @@ class _PaintPageState extends State<PaintPage> {
   }
 
   Widget buildDefault(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
+    
     return Scaffold(
+      backgroundColor: theme.background,
       appBar: PreferredSize(
         preferredSize: const Size(double.infinity, kToolbarHeight),
         // Listen to the controller and update the UI when it updates.
@@ -110,7 +113,8 @@ class _PaintPageState extends State<PaintPage> {
           child: const Text("Canvas"),
           builder: (context, _, child) {
             return AppBar(
-              backgroundColor: theme.secondary1,
+              backgroundColor: theme.primary,
+              foregroundColor: theme.surface,
               title: child,
               leading: IconButton(
                 onPressed: () {
@@ -177,20 +181,27 @@ class _PaintPageState extends State<PaintPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Flexible(
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      padding: const EdgeInsets.symmetric(horizontal: 15),
-                      decoration: const BoxDecoration(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
-                        color: Colors.white54,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (controller.freeStyleMode !=
-                              FreeStyleMode.none) ...[
+                    child: Builder(
+                      builder: (context) {
+                        final isDark = Theme.of(context).brightness == Brightness.dark;
+                        final overlayColor = isDark 
+                          ? AppColors.darkSurface.withOpacity(0.9)
+                          : AppColors.lightSurface.withOpacity(0.9);
+                        
+                        return Container(
+                          constraints: const BoxConstraints(maxWidth: 400),
+                          padding: const EdgeInsets.symmetric(horizontal: 15),
+                          decoration: BoxDecoration(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                            color: overlayColor,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (controller.freeStyleMode !=
+                                  FreeStyleMode.none) ...[
                             const Divider(),
                             const Text("Free Style Settings"),
                             // Control free style stroke width
@@ -364,6 +375,8 @@ class _PaintPageState extends State<PaintPage> {
                           ],
                         ],
                       ),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -442,7 +455,7 @@ class _PaintPageState extends State<PaintPage> {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.start,
                                   children: [
-                                    Icon(getShapeIcon(e.key), color: Colors.black),
+                                    Icon(getShapeIcon(e.key)),
                                     Text(" ${e.value}"),
                                   ],
                                 ),

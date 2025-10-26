@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../../constant/constant.dart';
 
 /// Simple WebView page to display QRIS payment image
 class QRISWebViewPage extends StatefulWidget {
@@ -22,38 +23,26 @@ class QRISWebViewPage extends StatefulWidget {
 }
 
 class _QRISWebViewPageState extends State<QRISWebViewPage> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   bool _isLoading = true;
-  String? _base64Image;
 
   @override
   void initState() {
     super.initState();
     _initializeWebView();
-    // _extractBase64FromImage();
   }
-
-  // /// Fungsi untuk mengambil Base64 string dari Image.memory
-  // void _extractBase64FromImage() async {
-  //   if (widget.image.image is MemoryImage) {
-  //     final memoryImage = widget.image.image as MemoryImage;
-  //     final bytes = memoryImage.bytes;
-  //     setState(() {
-  //       _base64Image = base64Encode(bytes);
-  //     });
-  //     _initializeWebView();
-  //   }
-  // }
 
   void _initializeWebView() async {
     // Format price to Rupiah
     final formattedPrice =
         'Rp ${widget.price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}';
 
-// 🔹 Muat file gambar dari assets
-  final byteData = await rootBundle.load('assets/images/barcode_pembayaran.jpeg');
-  final bytes = byteData.buffer.asUint8List();
-  final base64Image = base64Encode(bytes);
+    // 🔹 Muat file gambar dari assets
+    final byteData = await rootBundle.load(
+      'assets/images/barcode_pembayaran.jpeg',
+    );
+    final bytes = byteData.buffer.asUint8List();
+    final base64Image = base64Encode(bytes);
 
     // Create HTML content with the QRIS image
     final htmlContent =
@@ -209,13 +198,6 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
             </div>
             
             <div class="content">
-
-              //  <!-- Thumbnail Preview -->
-              //  <div class="preview">
-              //    <img src="data:image/png;base64,$_base64Image" alt="Listing Preview" />
-              //    <p style="margin-top:8px; color:#6c757d; font-size:13px;">Preview: ${widget.listingTitle}</p>
-              //  </div>
-
                 <!-- Payment Info -->
                 <div class="info-card">
                     <div class="info-row">
@@ -282,14 +264,22 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
         ),
       )
       ..loadHtmlString(htmlContent);
+
+    setState(() {}); // Trigger rebuild after controller is initialized
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color textPrimaryColor = isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+    
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: const Text('QRIS Payment'),
+        title: Text(
+          'QRIS Payment',
+          style: TextStyle(color: textPrimaryColor),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -298,8 +288,11 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('ℹ️ Info Pembayaran'),
-                  content: const Text(
+                  title: Text(
+                    'ℹ️ Info Pembayaran',
+                    style: TextStyle(color: textPrimaryColor),
+                  ),
+                  content: Text(
                     'Ini adalah contoh pembayaran QRIS.\n\n'
                     'Pada implementasi sebenarnya:\n'
                     '• QR code akan di-generate secara dinamis\n'
@@ -307,11 +300,15 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
                     '• Verifikasi pembayaran otomatis\n'
                     '• Transfer project ownership otomatis\n\n'
                     'Saat ini hanya untuk demonstrasi UI/UX.',
+                    style: TextStyle(color: textPrimaryColor),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
+                      child: Text(
+                        'OK',
+                        style: TextStyle(color: AppColors.getPrimary(context)),
+                      ),
                     ),
                   ],
                 ),
@@ -321,12 +318,15 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-        ],
-      ),
+      body: _controller == null
+          ? const Center(child: CircularProgressIndicator())
+          : Stack(
+              children: [
+                WebViewWidget(controller: _controller!),
+                if (_isLoading)
+                  const Center(child: CircularProgressIndicator()),
+              ],
+            ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -336,11 +336,14 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.pop(context, false),
                   icon: const Icon(Icons.close),
-                  label: const Text('Batal'),
+                  label: Text(
+                    'Batal',
+                    style: TextStyle(color: AppColors.error),
+                  ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    side: const BorderSide(color: Colors.red),
-                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: AppColors.error),
+                    foregroundColor: AppColors.error,
                   ),
                 ),
               ),
@@ -353,14 +356,21 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('✅ Konfirmasi Pembayaran'),
-                        content: const Text(
+                        title: Text(
+                          '✅ Konfirmasi Pembayaran',
+                          style: TextStyle(color: textPrimaryColor),
+                        ),
+                        content: Text(
                           'Apakah Anda sudah melakukan pembayaran dan ingin menyelesaikan transaksi?',
+                          style: TextStyle(color: textPrimaryColor),
                         ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: const Text('Belum'),
+                            child: Text(
+                              'Belum',
+                              style: TextStyle(color: textPrimaryColor),
+                            ),
                           ),
                           ElevatedButton(
                             onPressed: () {
@@ -371,18 +381,32 @@ class _QRISWebViewPageState extends State<QRISWebViewPage> {
                               ); // Return to marketplace with success
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
+                              backgroundColor: AppColors.success,
                             ),
-                            child: const Text('Sudah Bayar'),
+                            child: Text(
+                              'Sudah Bayar',
+                              style: TextStyle(
+                                color: Theme.of(context).brightness == Brightness.dark 
+                                  ? AppColors.darkTextPrimary 
+                                  : AppColors.lightSurface,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     );
                   },
                   icon: const Icon(Icons.check_circle),
-                  label: const Text('Pembayaran Selesai'),
+                  label: Text(
+                    'Pembayaran Selesai',
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark 
+                        ? AppColors.darkTextPrimary 
+                        : AppColors.lightSurface,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: AppColors.success,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                 ),

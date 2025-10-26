@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../constant/constant.dart';
 
 /// Animated card with hover effects (for web/desktop)
 class AnimatedProjectCard extends StatefulWidget {
@@ -282,9 +283,9 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
           shaderCallback: (bounds) {
             return LinearGradient(
               colors: [
-                Colors.grey[300]!,
-                Colors.grey[100]!,
-                Colors.grey[300]!,
+                AppColors.lightBorder,
+                AppColors.lightSurfaceVariant,
+                AppColors.lightBorder,
               ],
               stops: const [0.0, 0.5, 1.0],
               begin: Alignment(-1.0 + _controller.value * 3, 0),

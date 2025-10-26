@@ -5,6 +5,7 @@ import '../../all_code/data_api/project_repository.dart';
 import '../../all_code/model/collaboration_invitation.dart';
 import '../../di.dart';
 import '../../all_code/page/layer_paint_page.dart';
+import '../../constant/constant.dart';
 
 class InvitationsPage extends StatefulWidget {
   const InvitationsPage({Key? key}) : super(key: key);
@@ -60,7 +61,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Collaboration Invitations'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppColors.primary1,
       ),
       body: StreamBuilder<List<CollaborationInvitation>>(
         stream: _invitationRepo.streamInvitationsForEmail(_userEmail!),
@@ -74,7 +75,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const Icon(Icons.error_outline, size: 64, color: AppColors.error),
                   const SizedBox(height: 16),
                   Text('Error: ${snapshot.error}'),
                 ],
@@ -88,12 +89,12 @@ class _InvitationsPageState extends State<InvitationsPage> {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Icon(Icons.mail_outline, size: 64, color: Colors.grey),
+                children: [
+                  Icon(Icons.mail_outline, size: 64, color: AppColors.mediumGrey),
                   SizedBox(height: 16),
                   Text(
                     'No pending invitations',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    style: TextStyle(fontSize: 18, color: AppColors.mediumGrey),
                   ),
                 ],
               ),
@@ -135,11 +136,11 @@ class _InvitationsPageState extends State<InvitationsPage> {
             // Owner Info
             Row(
               children: [
-                const Icon(Icons.person, size: 16, color: Colors.grey),
+                const Icon(Icons.person, size: 16, color: AppColors.mediumGrey),
                 const SizedBox(width: 4),
                 Text(
                   'From: ${invitation.ownerName}',
-                  style: const TextStyle(color: Colors.grey),
+                  style: const TextStyle(color: AppColors.mediumGrey),
                 ),
               ],
             ),
@@ -148,11 +149,11 @@ class _InvitationsPageState extends State<InvitationsPage> {
             // Date
             Row(
               children: [
-                const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                const Icon(Icons.calendar_today, size: 16, color: AppColors.mediumGrey),
                 const SizedBox(width: 4),
                 Text(
                   _formatDate(invitation.createdAt),
-                  style: const TextStyle(color: Colors.grey),
+                  style: const TextStyle(color: AppColors.mediumGrey),
                 ),
               ],
             ),
@@ -164,10 +165,10 @@ class _InvitationsPageState extends State<InvitationsPage> {
               children: [
                 TextButton.icon(
                   onPressed: () => _rejectInvitation(invitation),
-                  icon: const Icon(Icons.close, color: Colors.red),
+                  icon: const Icon(Icons.close, color: AppColors.error),
                   label: const Text(
                     'Reject',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.error),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -176,8 +177,8 @@ class _InvitationsPageState extends State<InvitationsPage> {
                   icon: const Icon(Icons.check),
                   label: const Text('Accept'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.success,
+                    foregroundColor: AppColors.lightSurface,
                   ),
                 ),
               ],
@@ -245,7 +246,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Invitation accepted! Opening project...'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
         
@@ -265,7 +266,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error accepting invitation: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -288,8 +289,8 @@ class _InvitationsPageState extends State<InvitationsPage> {
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: AppColors.error,
+              foregroundColor: AppColors.lightSurface,
             ),
             child: const Text('Reject'),
           ),
@@ -336,7 +337,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Invitation rejected'),
-            backgroundColor: Colors.orange,
+            backgroundColor: AppColors.warning,
           ),
         );
       }
@@ -349,7 +350,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error rejecting invitation: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }

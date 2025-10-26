@@ -9,25 +9,31 @@ class DetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use ThemeManager from constant.dart
     final theme = ThemeManager.of(context);
+    
     return Scaffold(
-      backgroundColor: theme.secondary1,
-      appBar: AppBar(title: Text(project.name)),
+      backgroundColor: theme.background,
+      appBar: AppBar(
+        backgroundColor: theme.primary,
+        foregroundColor: theme.surface,
+        title: Text(project.name),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Owner: ${project.ownerId}'),
-            Text('Project ID: ${project.id}'),
-            Text('Public: ${project.isPublic ? "Yes" : "No"}'),
-            Text('Canvas: ${project.canvasWidth}x${project.canvasHeight}'),
-            Text('Created At: ${project.createdAt.toString()}'),
-            Text('Updated At: ${project.updatedAt.toString()}'),
+            Text('Owner: ${project.ownerId}', style: TextStyle(color: theme.textPrimary)),
+            Text('Project ID: ${project.id}', style: TextStyle(color: theme.textPrimary)),
+            Text('Public: ${project.isPublic ? "Yes" : "No"}', style: TextStyle(color: theme.textPrimary)),
+            Text('Canvas: ${project.canvasWidth}x${project.canvasHeight}', style: TextStyle(color: theme.textPrimary)),
+            Text('Created At: ${project.createdAt.toString()}', style: TextStyle(color: theme.textSecondary)),
+            Text('Updated At: ${project.updatedAt.toString()}', style: TextStyle(color: theme.textSecondary)),
             const SizedBox(height: 10),
-            Text('Collaborators (${project.collaboratorIds.length}):'),
+            Text('Collaborators (${project.collaboratorIds.length}):', style: TextStyle(color: theme.textPrimary, fontWeight: FontWeight.bold)),
             for (var collaboratorId in project.collaboratorIds)
-              Text('- $collaboratorId'),
+              Text('- $collaboratorId', style: TextStyle(color: theme.textSecondary)),
           ],
         ),
       ),

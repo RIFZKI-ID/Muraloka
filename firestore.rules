@@ -118,9 +118,19 @@ service cloud.firestore {
         // Layers subcollection in shared projects
         match /layers/{layerId} {
           allow read: if isAuthenticated();
-          // Allow write if user is owner or collaborator
-          allow create, update, delete: if isAuthenticated() &&
-            canAccessProject(get(/databases/$(database)/documents/artifacts/$(appId)/public/data/projects_shared/$(projectId)).data);
+          // Allow write if:
+          // 1. Layer has ownerId/collaboratorIds fields (new layers) - check those
+          // 2. Layer doesn't have these fields (old layers) - fallback to project permissions
+          allow create, update, delete: if isAuthenticated() && (
+            // New layers: check layer's own ownerId and collaboratorIds
+            (resource.data.keys().hasAll(['ownerId', 'collaboratorIds']) &&
+             (request.auth.uid == resource.data.ownerId || 
+              request.auth.uid in resource.data.collaboratorIds))
+            ||
+            // Old layers (backward compatibility): check parent project
+            (!resource.data.keys().hasAll(['ownerId', 'collaboratorIds']) &&
+             canAccessProject(get(/databases/$(database)/documents/artifacts/$(appId)/public/data/projects_shared/$(projectId)).data))
+          );
         }
       }
     }
@@ -128,12 +138,22 @@ service cloud.firestore {
     // Store listings for marketplace
     match /artifacts/{appId}/public/data/store_listings/{listingId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      
+      // Create: User can create listing with required fields including ownerName
+      allow create: if isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['title', 'projectId', 'ownerId', 'ownerName', 'price']) &&
+        request.resource.data.ownerName is string &&
+        request.resource.data.ownerName.size() > 0;
+      
+      // Update: Owner can update, or system can update purchase stats
       allow update: if isAuthenticated() && 
-        (resource.data.sellerId == request.auth.uid || 
-         request.resource.data.keys().hasAny(['purchaseCount', 'lastPurchasedAt', 'lastPurchasedBy']));
+        (resource.data.ownerId == request.auth.uid || 
+         request.resource.data.keys().hasAny(['totalSold', 'averageRating', 'totalReviews', 'updatedAt']));
+      
+      // Delete: Only owner can delete
       allow delete: if isAuthenticated() && 
-        resource.data.sellerId == request.auth.uid;
+        resource.data.ownerId == request.auth.uid;
     }
     
     // Transactions for payment records
