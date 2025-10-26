@@ -1,0 +1,123 @@
+Rancangan MVP (Minimum Viable Product) Muraloka Painter
+
+Project Capstone: Aplikasi Painter Digital Kolaboratif dengan Monetisasi
+Tujuan Proyek: Menyediakan platform digital painting multi-layer real-time dengan integrasi Firestore untuk kolaborasi dan marketplace terintegrasi.
+
+1. Stack Teknologi Inti
+
+|
+
+| Komponen | Teknologi | Peran |
+| Frontend | Flutter | Aplikasi cross-platform yang kaya akan UI dan interaksi. |
+| Backend/DB | Google Firestore | Database NoSQL real-time untuk persistensi data kanvas berlapis dan kolaborasi. |
+| Monetisasi | Midtrans Snap | Gerbang pembayaran yang mudah untuk transaksi di marketplace. |
+| AI Coding | Sonnet 4.5 / Gemini | Bantuan dalam menghasilkan kode boilerplate dan logika kompleks (misalnya, CustomPainter, Service Layer). |
+
+2. Pilar Fungsionalitas MVP (Prioritas Utama)
+
+MVP ini dibagi menjadi tiga pilar utama yang harus berfungsi penuh pada peluncuran pertama:
+
+Pilar 1: Core Painting & Persistensi Data
+
+Fokus pada pengalaman menggambar yang fungsional dan penyimpanan data kanvas yang efisien.
+
+Custom Painter: Implementasi CustomPainter untuk merender Path/Stroke.
+
+Alat Dasar: Brush dan Eraser (sebagai sikat penghapus).
+
+Canvas Control: Fungsionalitas Pan (Geser) & Zoom menggunakan InteractiveViewer.
+
+Layer Management: Logika untuk menggambar pada layer aktif dan menyimpan data layer ke subkoleksi Firestore.
+
+Aesthetics: Dukungan Dark Mode di seluruh aplikasi.
+
+Pilar 2: Kolaborasi & Kontrol Akses
+
+Memastikan fitur berbagi berfungsi real-time dengan kontrol kepemilikan yang ketat.
+
+Real-time Sync: Menggunakan StreamBuilder Firestore untuk menampilkan perubahan gambar dari kolaborator secara instan.
+
+Kontrol Ownership Kritis: Hanya Owner (pembuat kanvas pertama) yang memiliki hak untuk Export, Jual, Kelola Proyek, dan Hapus Proyek/Kanvas.
+
+Drafts/Galeri: Tampilan galeri untuk melihat dan mengakses proyek yang disimpan di Firestore atau diekspor ke galeri perangkat.
+
+Izin Hapus: Kolaborator yang diundang TIDAK BISA menghapus kanvas.
+
+Pilar 3: Monetisasi (Marketplace Ready)
+
+Kerangka untuk menjual karya dan menerima pembayaran.
+
+Halaman Store/Marketplace: Tampilan publik yang menampilkan karya yang dijual oleh semua pengguna.
+
+Integrasi Penjualan: Aksi bagi Owner untuk mempublikasikan proyek ke Store dengan input Judul dan Harga Jual.
+
+Midtrans Snap: Integrasi untuk memanggil checkout page Midtrans untuk alur pembayaran yang cepat dan aman.
+
+Metrik Penjualan: Menampilkan Total Sold pada setiap listing produk.
+
+3. Fitur Breakdown & Status
+
+| Fitur | MVP (Prio 1) | Future Iterations (Prio 2/3) | Status Code |
+| Data & ORM | ORM Model Lengkap (Project, Layer, StoreListing) dan CRUD Service (Private/Shared/Store Pathing). | Validasi skema input yang lebih ketat. | ✅ Selesai |
+| Persistence | Firebase Setup, Otentikasi, dan Logika Real-time Sync. Auto-save dengan debounce 2s. | Undo/Redo history lengkap. | ✅ Selesai |
+| Drawing Tool | Basic Brush & Eraser, Pan/Zoom Unlimited, Rotasi & Mirror Canvas. | Pilihan Brush kompleks (tekstur), Seleksi Area. | ✅ Selesai |
+| Save/Load | Serialisasi/Deserialisasi FreeStyleDrawable, TextDrawable, dan ShapeDrawable ke Firestore. | Shape geometry serialization lengkap. | ✅ Selesai |
+| Kolaborasi | Real-time Sync Layer. Kontrol Ownership (Jual, Hapus, Export). | Indikator Presence (kursor kolaborator), Fitur Chat. | ✅ Selesai |
+| Monetisasi | Integrasi Sell to Marketplace dengan Input Harga & Judul. Display Total Sold. | Integrasi Midtrans Snap untuk Pembayaran, Status Transaksi. | ✅ Selesai |
+| Store/Marketplace | Halaman Store View (Real-time Fetch), Aksi Jual dari Proyek (Owner Only). | Filter/Pencarian Karya, Sistem Review Dasar (Rating & Comment). | ✅ Selesai |
+| Export & Drafts | Export Kanvas ke PNG (Owner Only), Tampilan Galeri Drafts. | Opsi Export ke format kustom untuk diedit kembali. | ✅ Selesai |
+| Ownership Control | Hanya Owner yang bisa Export, Jual ke Marketplace, dan Hapus Project/Layer. | Sistem transfer ownership. | ✅ Selesai |
+
+4. Skema Database Firestore
+
+Skema yang sangat penting untuk mendukung Kolaborasi dan Marketplace.
+
+Koleksi A: Proyek Pribadi (Drafts)
+
+Path: /artifacts/{appId}/users/{userId}/projects/{projectId}
+
+Akses: Hanya Owner yang dapat Baca/Tulis/Hapus.
+
+Koleksi B: Proyek Kolaborasi (Shared)
+
+Path: /artifacts/{appId}/public/data/projects_shared/{projectId}
+
+Akses: Owner dan Kolaborator dapat Baca/Tulis. Hanya Owner yang dapat Hapus.
+
+Koleksi C: Daftar Produk Toko (Marketplace)
+
+Path: /artifacts/{appId}/public/data/store_listings/{listingId}
+
+Akses: Semua pengguna dapat Baca. Hanya Owner Proyek yang dapat membuat listing.
+
+Dokumen projects (Shared/Private)
+
+| Field | Tipe | Deskripsi |
+| ownerId | String | ID pemilik, penentu Izin Kritis. |
+| collaboratorIds | List | ID pengguna yang diundang (akses Tulis). |
+| isPublic | Boolean | Status proyek (Private/Shared). |
+| name | String | Nama Proyek. |
+| timestamp | Timestamp | Waktu pembuatan. |
+
+Dokumen store_listings (Marketplace)
+
+| Field | Tipe | Deskripsi |
+| title | String | Judul Karya (Input Penjual). |
+| projectId | String | ID proyek sumber. |
+| ownerId | String | ID penjual. |
+| price | Double | Harga Jual (Input Penjual, untuk Midtrans). |
+| thumbnailUrl | String | URL ke gambar thumbnail (Cloud Storage). |
+| totalSold | Integer | Counter total item yang sudah terjual. |
+| averageRating | Double | (Prio 2) Rata-rata review. |
+
+Subkoleksi D: Review Produk Toko (Prio 2)
+
+Path: /artifacts/{appId}/public/data/store_listings/{listingId}/reviews/{reviewId}
+
+Akses: Semua pengguna terautentikasi dapat Baca/Tulis.
+
+| Dokumen reviews | Tipe | Deskripsi |
+| reviewerId | String | ID pengguna yang memberi ulasan. |
+| rating | Integer (1-5) | Nilai bintang yang diberikan. |
+| comment | String | Ulasan tertulis. |
+| timestamp | Timestamp | Waktu ulasan. |

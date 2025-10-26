@@ -1,0 +1,31 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "muraloka-apps",
+          "appId": "1:444914900205:android:cbf98a01460ad3078880e4",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "muraloka-apps",
+          "configurations": {
+            "android": "1:444914900205:android:cbf98a01460ad3078880e4",
+            "ios": "1:444914900205:ios:1f6d78507273cd6d8880e4",
+            "macos": "1:444914900205:ios:1f6d78507273cd6d8880e4",
+            "web": "1:444914900205:web:4b87384ec15a51af8880e4",
+            "windows": "1:444914900205:web:4bcbe31f0e7cbb358880e4"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

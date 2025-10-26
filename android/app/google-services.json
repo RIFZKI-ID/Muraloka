@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "444914900205",
+    "project_id": "muraloka-apps",
+    "storage_bucket": "muraloka-apps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:444914900205:android:cbf98a01460ad3078880e4",
+        "android_client_info": {
+          "package_name": "com.olimhousestudio.muraloka"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "444914900205-a19ijii8gn8uu8mfi67rp3shbgmhkdda.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_DfYjzBsFr_-lCw7rexTqv-I4HPZ5w7c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "444914900205-a19ijii8gn8uu8mfi67rp3shbgmhkdda.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
